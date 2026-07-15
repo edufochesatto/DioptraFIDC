@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border
-from openpyxl.utils.dataframe import data_frame_to_rows
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ── CONFIGURAÇÃO ──
 NOME_FERRAMENTA = "Dioptra FIDC"
@@ -128,7 +128,7 @@ def criar_ranking(wb, df):
     if 'PL (R$ milhões)' in dx.columns:
         dx['PL (R$ milhões)'] = (dx['PL (R$ milhões)']/1_000_000).round(2)
     dx = dx.sort_values('PL (R$ milhões)', ascending=False)
-    for r, row in enumerate(data_frame_to_rows(dx, index=False, header=True), 1):
+    for r, row in enumerate(dataframe_to_rows(dx, index=False, header=True), 1):
         for c, v in enumerate(row, 1): ws.cell(row=r, column=c, value=v)
     nc = len(dx.columns); ul = len(dx)+1
     _cab(ws, 1, nc); _zeb(ws, 2, ul, nc); _assin(ws, ul+2)
