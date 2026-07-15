@@ -125,9 +125,14 @@ def criar_ranking(wb, df):
             'TAXA_ADM':'Taxa Adm (% a.a.)','RATING':'Rating'}
     cols = [c for c in MAPA if c in df.columns]
     dx = df[cols].copy(); dx.columns = [MAPA[c] for c in cols]
+
+    # Converte PL para milhões e ordena (com proteção)
     if 'PL (R$ milhões)' in dx.columns:
         dx['PL (R$ milhões)'] = (dx['PL (R$ milhões)']/1_000_000).round(2)
-    dx = dx.sort_values('PL (R$ milhões)', ascending=False)
+        dx = dx.sort_values('PL (R$ milhões)', ascending=False)
+    elif len(dx.columns) > 0:
+        dx = dx.sort_values(dx.columns[0], ascending=False)
+
     for r, row in enumerate(dataframe_to_rows(dx, index=False, header=True), 1):
         for c, v in enumerate(row, 1): ws.cell(row=r, column=c, value=v)
     nc = len(dx.columns); ul = len(dx)+1
