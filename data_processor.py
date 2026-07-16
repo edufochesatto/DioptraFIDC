@@ -1,28 +1,9 @@
 """
 data_processor.py — Lê o CSV tab_I do FIDC baixado da CVM.
+Usa as colunas reais do layout CVM.
 """
 import pandas as pd
 from pathlib import Path
-
-COLUNAS_CVM = {
-    'CNPJ_FUNDO': 'CNPJ_FUNDO',
-    'DENOM_SOCIAL': 'DENOMINACAO_SOCIAL',
-    'VL_PAT_LIQ': 'VL_PL',
-    'VL_PL': 'VL_PL',
-    'PRAZO_MEDIO': 'PRAZO_MEDIO',
-    'PRAZO_MED': 'PRAZO_MEDIO',
-    'VL_RENTAB': 'RENTABILIDADE',
-    'VL_PDD': 'PDD_PCT',
-    'PDD_PCT': 'PDD_PCT',
-    'VL_RECOMPRA': 'RECOMPRA_PCT',
-    'RECOMPRA_PCT': 'RECOMPRA_PCT',
-    'QUANTIDADE_CEDENTES': 'NUM_CEDENTES',
-    'NUM_CEDENTES': 'NUM_CEDENTES',
-    'QUANTIDADE_SACADOS': 'NUM_SACADOS',
-    'NUM_SACADOS': 'NUM_SACADOS',
-    'CLASSE': 'CLASSE',
-    'CLASSE_UNICA': 'CLASSE',
-}
 
 def limpar_valor(valor):
     if pd.isna(valor):
@@ -39,13 +20,13 @@ def processar_dados_cvm(raw_dir):
     """Lê o arquivo tab_I e retorna DataFrame padronizado."""
     raw_path = Path(raw_dir)
     if not raw_path.exists():
-        print(f"  ⚠ Pasta {raw_path} não encontrada!")
+        print(f"  Pasta {raw_path} nao encontrada!")
         return pd.DataFrame()
 
+    # Procura arquivo tab_I
     arquivos = list(raw_path.glob("*tab_I*"))
     if not arquivos:
-        print(f"  ⚠ Nenhum arquivo tab_I encontrado em {raw_path}")
-        print(f"  Arquivos encontrados: {[f.name for f in raw_path.glob('*')]}")
+        print(f"  Nenhum arquivo tab_I encontrado em {raw_path}")
         return pd.DataFrame()
 
     arquivo = arquivos[0]
@@ -56,28 +37,44 @@ def processar_dados_cvm(raw_dir):
     except:
         df = pd.read_csv(arquivo, encoding='utf-8', sep=';', dtype=str, low_memory=False)
 
-    print(f"  → {len(df)} linhas, {len(df.columns)} colunas")
-    print(f"  Colunas: {list(df.columns[:20])}")
+    print(f"  {len(df)} linhas, {len(df.columns)} colunas")
+    print(f"  Primeiras colunas: {list(df.columns[:15])}")
 
+    # Renomeia colunas do layout CVM para o padrao
     rename_map = {}
     for col in df.columns:
-        col_upper = col.strip().upper()
-        if col_upper in COLUNAS_CVM:
-            rename_map[col] = COLUNAS_CVM[col_upper]
+        col_upper = col.strip().upper().replace(' ', '_')
+        if col_upper == 'CNPJ_FUNDO_CLASSE':
+            rename_map[col] = 'CNPJ_FUNDO'
+        elif col_upper == 'DENOM_SOCIAL':
+            rename_map[col] = 'DENOMINACAO_SOCIAL'
+        elif col_upper == 'TAB_I_VL_ATIVO':
+            rename_map[col] = 'VL_ATIVO'
+        elif col_upper in ['CLASSE', 'CLASSE_UNICA']:
+            rename_map[col] = 'CLASSE'
 
-    if rename_map:
-        df = df.rename(columns=rename_map)
-        print(f"  Colunas mapeadas: {rename_map}")
+    df = df.rename(columns=rename_map)
 
-    for col in ['VL_PL', 'PRAZO_MEDIO', 'RENTABILIDADE', 'PDD_PCT', 'RECOMPRA_PCT', 'NUM_CEDENTES', 'NUM_SACADOS']:
-        if col in df.columns:
-            df[col] = df[col].apply(limpar_valor)
+    # Converte TAB_I_VL_ATIVO para numerico (vai servir como PL)
+    if 'VL_ATIVO' in df.columns:
+        df['VL_PL'] = df['VL_ATIVO'].apply(limpar_valor)
+    else:
+        df['VL_PL'] = 0.0
 
+    # Remove duplicatas de CNPJ
     if 'CNPJ_FUNDO' in df.columns:
         df = df.drop_duplicates(subset=['CNPJ_FUNDO'], keep='last')
 
+    # Colunas que nao temos no tab_I (inicializa como 0)
+    df['PDD_PCT'] = 0.0
+    df['RECOMPRA_PCT'] = 0.0
+    df['RENTABILIDADE'] = 0.0
+    df['NUM_SACADOS'] = 0
+    df['NUM_CEDENTES'] = 0
+
+    # Ordena por PL decrescente
     if 'VL_PL' in df.columns:
         df = df.sort_values('VL_PL', ascending=False)
 
-    print(f"  ✅ {len(df)} fundos processados")
+    print(f"  {len(df)} fundos processados")
     return df
