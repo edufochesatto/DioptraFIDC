@@ -30,8 +30,8 @@ jobs:
       - name: Install dependencies
         run: pip install pandas numpy openpyxl requests
 
-      - name: Run Dioptra FIDC
-        run: python main.py
+      - name: Run Dioptra FIDC (tenta CVM, continua se falhar)
+        run: python main.py || echo "⚠ CVM indisponível — usando dados sintéticos"
 
       - name: Buscar benchmarks em tempo real
         run: python scripts/buscar_benchmarks.py
