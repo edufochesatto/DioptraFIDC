@@ -214,9 +214,9 @@ def criar_top10(wb, df):
     ws.column_dimensions["C"].width = 22
     ws.column_dimensions["D"].width = 18
     _assin(ws, linha + 1)
-
 def criar_comparativo(wb, df):
     """Aba 3: Comparação com CDI e IMAB."""
+    from openpyxl.utils import get_column_letter
     ws = wb.create_sheet("3. CDI vs IMAB")
 
     ws.cell(row=1, column=1,
@@ -285,8 +285,9 @@ def criar_comparativo(wb, df):
 
     for c, w in [(1, 40), (2, 16), (3, 14), (4, 14), (5, 16), (6, 16),
                   (7, 10), (8, 16)]:
-        ws.column_dimensions[ws.cell(row=1, column=c).column_letter].width = w
+        ws.column_dimensions[get_column_letter(c)].width = w
     ws.freeze_panes = "A5"
+
 
 def criar_governanca(wb, metricas):
     """Aba 4: Estatísticas descritivas das métricas."""
