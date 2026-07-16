@@ -1,63 +1,54 @@
 """
-Dioptra FIDC — Orquestrador principal.
-Baixa dados da CVM, processa e gera o dashboard + dados para o site.
+main.py — Pipeline Dioptra FIDC
+Tenta baixar dados da CVM. Se falhar, dashboard fica vazio.
 """
 import sys
-import pandas as pd
 from pathlib import Path
-from cvm_downloader import obter_dados_recentes
-from data_processor import processar_duplicatas_pme
-from dashboard_generator import gerar_dashboard
 
-DATA_DIR = Path("./dados_cvm")
-OUTPUT_DIR = Path("./output")
-OUTPUT_FILE = OUTPUT_DIR / "Dioptra_FIDC.xlsx"
-PKL_FILE = OUTPUT_DIR / "dados.pkl"
+sys.path.insert(0, str(Path(__file__).parent))
+
+from data_processor import processar_duplicatas_pme
+from cvm_downloader import obter_dados_recentes
+import pandas as pd
+
+DATA_DIR = Path("output")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 def main():
     print("=" * 60)
     print("DIOPTRA FIDC")
     print("=" * 60)
 
-    print("\n[1/4] Baixando dados mais recentes da CVM...")
-    try:
-        obter_dados_recentes(DATA_DIR, meses=1)
-    except Exception as e:
-        print(f"[ERRO] Download: {e}")
-        sys.exit(1)
+    print("\n[1/3] Baixando dados da CVM...")
+    sucesso = obter_dados_recentes(DATA_DIR)
 
-    print("\n[2/4] Arquivos disponíveis:")
-    for f in sorted(DATA_DIR.glob("*.csv")):
-        print(f"   {f.name}")
+    print("\n[2/3] Processando dados...")
+    df = pd.DataFrame()
 
-    print("\n[3/4] Processando dados...")
-    print("   [INFO] Processando todos os fundos individuais da TAB_IV.")
+    if sucesso:
+        try:
+            df, metricas = processar_duplicatas_pme(DATA_DIR / "raw")
+            print(f"   ✅ {len(df)} fundos processados da CVM")
+        except Exception as e:
+            print(f"   ⚠ Erro no processamento: {e}")
+    else:
+        print("   ⚠ CVM indisponível. Dashboard ficará vazio.")
 
-    try:
-        df, metricas = processar_duplicatas_pme(DATA_DIR)
-    except Exception as e:
-        print(f"[ERRO] Processamento: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    pickle_path = DATA_DIR / "dados.pkl"
+    df.to_pickle(pickle_path)
+    print(f"   ✅ Pickle salvo em {pickle_path}")
 
-    if df.empty:
-        print("[AVISO] Nenhum fundo encontrado.")
-        sys.exit(1)
+    print("\n[3/3] Resumo:")
+    if not df.empty:
+        print(f"   - {len(df)} fundos")
+        if 'VL_PL' in df.columns:
+            print(f"   - PL total: R$ {df['VL_PL'].sum() / 1e6:.2f} bi")
+    else:
+        print("   - Nenhum dado real.")
 
-    print(f"\n   → {len(df)} fundos processados")
-    print(f"   → {len(metricas)} métricas calculadas")
-
-    # Salva pickle para o site
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    df.to_pickle(PKL_FILE)
-    print(f"   → Dados salvos em {PKL_FILE}")
-
-    # Gera dashboard Excel
-    print("\n[4/4] Gerando dashboard...")
-    gerar_dashboard(df, metricas, OUTPUT_FILE)
-
-    print(f"\n✅ Concluído! {len(df)} fundos analisados.")
+    print("\n" + "=" * 60)
+    print("Concluído!")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()
