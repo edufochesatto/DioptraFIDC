@@ -1,8 +1,9 @@
 """
 Dioptra FIDC — Orquestrador principal.
-Baixa dados da CVM, processa e gera o dashboard.
+Baixa dados da CVM, processa e gera o dashboard + dados para o site.
 """
 import sys
+import pandas as pd
 from pathlib import Path
 from cvm_downloader import obter_dados_recentes
 from data_processor import processar_duplicatas_pme
@@ -11,6 +12,7 @@ from dashboard_generator import gerar_dashboard
 DATA_DIR = Path("./dados_cvm")
 OUTPUT_DIR = Path("./output")
 OUTPUT_FILE = OUTPUT_DIR / "Dioptra_FIDC.xlsx"
+PKL_FILE = OUTPUT_DIR / "dados.pkl"
 
 def main():
     print("=" * 60)
@@ -46,7 +48,12 @@ def main():
     print(f"\n   → {len(df)} fundos processados")
     print(f"   → {len(metricas)} métricas calculadas")
 
+    # Salva pickle para o site
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    df.to_pickle(PKL_FILE)
+    print(f"   → Dados salvos em {PKL_FILE}")
+
+    # Gera dashboard Excel
     print("\n[4/4] Gerando dashboard...")
     gerar_dashboard(df, metricas, OUTPUT_FILE)
 
