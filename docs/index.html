@@ -241,6 +241,7 @@
             font-variant-numeric: tabular-nums;
         }
         .table-card td.green { color: #16a34a; font-weight: 600; }
+        .table-card td.red { color: #dc2626; font-weight: 600; }
         .table-card tr:hover { background: #f8fafc; }
         .table-card .empty {
             text-align: center;
@@ -296,6 +297,8 @@
             border-top: 1px solid #e2e8f0;
             display: flex;
             justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
         }
         @media (max-width: 768px) {
             .sidebar { display: none; }
@@ -360,7 +363,7 @@
             <div class="metric-card">
                 <div class="mlabel">Rentabilidade Média</div>
                 <div class="mvalue" id="kpi-rent-media">—</div>
-                <div class="msub">vs CDI</div>
+                <div class="msub">% a.a.</div>
             </div>
             <div class="metric-card">
                 <div class="mlabel">Melhor FIDC</div>
@@ -380,7 +383,7 @@
             <div class="metric-card">
                 <div class="mlabel">PL Total</div>
                 <div class="mvalue" id="kpi-pl-total">—</div>
-                <div class="msub">R$ milhões</div>
+                <div class="msub"></div>
             </div>
         </div>
 
@@ -398,9 +401,9 @@
                 <thead>
                     <tr>
                         <th>CNPJ do Fundo</th>
-                        <th>PL (R$ milhões)</th>
-                        <th>PDD %</th>
-                        <th>Recompra %</th>
+                        <th>PL</th>
+                        <th>PDD</th>
+                        <th>Recompra</th>
                         <th>Nº Sacados</th>
                         <th>Nº Cedentes</th>
                     </tr>
@@ -417,7 +420,7 @@
         <div class="table-card" style="margin-bottom:16px;">
             <h3>Top 10 — PL</h3>
             <table>
-                <thead><tr><th>#</th><th>Fundo</th><th>PL (R$ milhões)</th></tr></thead>
+                <thead><tr><th>#</th><th>Fundo</th><th>PL</th></tr></thead>
                 <tbody id="top10-pl-body"><tr><td colspan="3" class="empty">Carregando...</td></tr></tbody>
             </table>
         </div>
@@ -433,7 +436,7 @@
     <!-- ==================== PÁGINA: GOVERNANÇA ==================== -->
     <div id="page-governanca" class="page">
         <div class="table-card">
-            <h3>📊 Estatísticas de Governança</h3>
+            <h3>Estatísticas de Governança</h3>
             <div style="padding:20px;" id="governanca-content">
                 <p style="color:#94a3b8;">Carregando estatísticas...</p>
             </div>
@@ -449,31 +452,31 @@
             </div>
             <div class="glossario-item">
                 <h4>PDD</h4>
-                <p>Provisão para Devedores Duvidosos como percentual do PL. Indica a expectativa de perda esperada pela gestora.</p>
+                <p>Provisão para Devedores Duvidosos como percentual do PL. Quanto menor, melhor a qualidade da carteira.</p>
             </div>
             <div class="glossario-item">
-                <h4>Recompra %</h4>
-                <p>Percentual do PL referente a direitos de recompra. Quanto maior, maior a liquidez potencial.</p>
+                <h4>Recompra</h4>
+                <p>Percentual da carteira com cláusula de recompra. Quanto maior, maior a liquidez potencial.</p>
             </div>
             <div class="glossario-item">
                 <h4>Nº Cedentes</h4>
-                <p>Quantidade de cedentes (originadores) dos recebíveis no fundo.</p>
+                <p>Quantidade de cedentes (originadores) que vendem os recebíveis para o fundo.</p>
             </div>
             <div class="glossario-item">
                 <h4>Nº Sacados</h4>
-                <p>Quantidade de sacados (devedores) dos recebíveis. Maior diversificação = menor risco.</p>
+                <p>Quantidade de sacados (devedores) dos recebíveis na carteira. Mais sacados = mais diversificação.</p>
             </div>
             <div class="glossario-item">
                 <h4>Rentabilidade</h4>
-                <p>Retorno do fundo no período, expresso em % a.a. Comparado ao CDI como referência.</p>
+                <p>Retorno do fundo no período, expresso em % a.a.</p>
             </div>
             <div class="glossario-item">
                 <h4>IPCA</h4>
-                <p>Índice Nacional de Preços ao Consumidor Amplo. Medida oficial de inflação do Brasil.</p>
+                <p>Índice Nacional de Preços ao Consumidor Amplo — a inflação oficial do Brasil.</p>
             </div>
             <div class="glossario-item">
-                <h4>Overcollateralization</h4>
-                <p>Garantida adicional que protege os cotistas seniores. Quanto maior, mais proteção.</p>
+                <h4>IBOVESPA</h4>
+                <p>Principal índice de ações da B3, referência do mercado acionário brasileiro.</p>
             </div>
         </div>
     </div>
@@ -503,30 +506,30 @@
 <script>
     let dadosFundos = [];
 
-    function formatarReais(valor) {
-        if (valor === null || valor === undefined || isNaN(valor)) return '—';
-        // Formata com separador de milhar e 2 decimais
-        const partes = valor.toFixed(2).split('.');
-        const inteiro = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-        return 'R$ ' + inteiro + ',' + partes[1];
+    function formatarPL(valor) {
+        if (!valor || isNaN(valor) || valor <= 0) return '—';
+        if (valor >= 1e12) return 'R$ ' + (valor / 1e12).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' tri';
+        if (valor >= 1e8) return 'R$ ' + (valor / 1e9).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' bi';
+        if (valor >= 1000) return 'R$ ' + (valor / 1000).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' bi';
+        return 'R$ ' + valor.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' MM';
     }
 
-    function formatarPL(valor) {
-        if (valor === null || valor === undefined || isNaN(valor) || valor <= 0) return '—';
-        if (valor >= 1000) {
-            return (valor / 1000).toFixed(2).replace('.', ',') + ' bi';
-        }
-        return valor.toFixed(2).replace('.', ',') + ' MM';
+    function formatarPLcurto(valor) {
+        if (!valor || isNaN(valor) || valor <= 0) return '—';
+        if (valor >= 1e12) return (valor / 1e12).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' tri';
+        if (valor >= 1e8) return (valor / 1e9).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' bi';
+        if (valor >= 1000) return (valor / 1000).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' bi';
+        return valor.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' MM';
     }
 
     function formatarPct(valor) {
-        if (valor === null || valor === undefined || isNaN(valor) || valor <= 0) return '—';
-        return valor.toFixed(2).replace('.', ',') + '%';
+        if (!valor || isNaN(valor) || valor <= 0) return '—';
+        return valor.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '%';
     }
 
     function formatarNum(valor) {
-        if (valor === null || valor === undefined || isNaN(valor) || valor <= 0) return '—';
-        return valor.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        if (!valor || isNaN(valor) || valor <= 0) return '—';
+        return Number(valor).toLocaleString('pt-BR');
     }
 
     function irPara(pagina) {
@@ -555,8 +558,8 @@
             if (respB.ok) {
                 const b = await respB.json();
                 const cards = document.querySelectorAll('.benchmark-card');
-                if (b.ipca && cards[0]) cards[0].querySelector('.value').textContent = b.ipca.valor.toFixed(2).replace('.', ',') + '%';
-                if (b.ibovespa && cards[1]) cards[1].querySelector('.value').textContent = b.ibovespa.valor.toLocaleString('pt-BR');
+                if (b.ipca && cards[0]) cards[0].querySelector('.value').textContent = formatarPct(b.ipca.valor);
+                if (b.ibovespa && cards[1]) cards[1].querySelector('.value').textContent = Number(b.ibovespa.valor).toLocaleString('pt-BR');
             }
 
             const resp = await fetch('dados.json');
@@ -568,8 +571,7 @@
             atualizarKPIs();
         } catch (e) {
             console.warn('Erro:', e.message);
-            document.getElementById('ranking-body').innerHTML =
-                '<tr><td colspan="6" class="empty">Nenhum fundo disponível</td></tr>';
+            document.getElementById('ranking-body').innerHTML = '<tr><td colspan="6" class="empty">Nenhum fundo disponível</td></tr>';
         }
     }
 
@@ -587,8 +589,8 @@
             const cedentes = f.NUM_CEDENTES || 0;
             return `<tr>
                 <td>${f.CNPJ_FUNDO || '---'}</td>
-                <td class="num">${formatarPL(pl)}</td>
-                <td class="num ${pdd < 3 ? 'green' : ''}">${formatarPct(pdd)}</td>
+                <td class="num"><strong>${formatarPL(pl)}</strong></td>
+                <td class="num ${pdd > 0 && pdd < 3 ? 'green' : ''}">${formatarPct(pdd)}</td>
                 <td class="num ${recompra > 50 ? 'green' : ''}">${formatarPct(recompra)}</td>
                 <td class="num">${formatarNum(sacados)}</td>
                 <td class="num">${formatarNum(cedentes)}</td>
@@ -601,21 +603,19 @@
         const rents = dadosFundos.map(f => f.RENTABILIDADE || 0).filter(v => v > 0);
         const pdds = dadosFundos.map(f => f.PDD_PCT || 0).filter(v => v > 0);
         const pls = dadosFundos.map(f => f.VL_PL || 0).filter(v => v > 0);
-
         const plTotal = pls.length > 0 ? pls.reduce((a,b) => a+b, 0) : 0;
 
         document.getElementById('kpi-total').textContent = total || '—';
         document.getElementById('kpi-rent-media').textContent = rents.length > 0
-            ? (rents.reduce((a,b) => a+b, 0) / rents.length).toFixed(2).replace('.', ',') + '%' : '—';
+            ? formatarPct(rents.reduce((a,b) => a+b, 0) / rents.length) : '—';
         document.getElementById('kpi-melhor').textContent = rents.length > 0
-            ? Math.max(...rents).toFixed(2).replace('.', ',') + '%' : '—';
+            ? formatarPct(Math.max(...rents)) : '—';
         document.getElementById('kpi-pdd').textContent = pdds.length > 0
-            ? (pdds.reduce((a,b) => a+b, 0) / pdds.length).toFixed(2).replace('.', ',') + '%' : '—';
+            ? formatarPct(pdds.reduce((a,b) => a+b, 0) / pdds.length) : '—';
         document.getElementById('kpi-pl-total').textContent = plTotal > 0 ? formatarPL(plTotal) : '—';
     }
 
     function atualizarTop10() {
-        // Top 10 por PL
         const plBody = document.getElementById('top10-pl-body');
         const sortedPL = [...dadosFundos].sort((a, b) => (b.VL_PL || 0) - (a.VL_PL || 0)).slice(0, 10);
         if (sortedPL.length === 0) {
@@ -624,11 +624,10 @@
             plBody.innerHTML = sortedPL.map((f, i) => `<tr>
                 <td>${i + 1}</td>
                 <td>${f.DENOMINACAO_SOCIAL || f.CNPJ_FUNDO || '---'}</td>
-                <td class="num">${formatarPL(f.VL_PL || 0)}</td>
+                <td class="num"><strong>${formatarPLcurto(f.VL_PL || 0)}</strong></td>
             </tr>`).join('');
         }
 
-        // Top 10 por PDD
         const pddBody = document.getElementById('top10-pdd-body');
         const sortedPDD = [...dadosFundos].sort((a, b) => (b.PDD_PCT || 0) - (a.PDD_PCT || 0)).slice(0, 10);
         if (sortedPDD.length === 0) {
@@ -654,13 +653,16 @@
         const pdds = dadosFundos.map(f => f.PDD_PCT || 0).filter(v => v > 0);
         const recompras = dadosFundos.map(f => f.RECOMPRA_PCT || 0).filter(v => v > 0);
         const sacados = dadosFundos.map(f => f.NUM_SACADOS || 0).filter(v => v > 0);
+        const cedentes = dadosFundos.map(f => f.NUM_CEDENTES || 0).filter(v => v > 0);
+        const rents = dadosFundos.map(f => f.RENTABILIDADE || 0).filter(v => v > 0);
 
-        const plMedio = pls.length > 0 ? (pls.reduce((a,b) => a+b, 0) / pls.length) : 0;
-        const pddMedio = pdds.length > 0 ? (pdds.reduce((a,b) => a+b, 0) / pdds.length) : 0;
-        const recompraMedia = recompras.length > 0 ? (recompras.reduce((a,b) => a+b, 0) / recompras.length) : 0;
-        const totalSacados = sacados.length > 0 ? sacados.reduce((a,b) => a+b, 0) : 0;
-        const totalCedentes = dadosFundos.map(f => f.NUM_CEDENTES || 0).filter(v => v > 0);
-        const totalCed = totalCedentes.length > 0 ? totalCedentes.reduce((a,b) => a+b, 0) : 0;
+        const plMedio = pls.length > 0 ? pls.reduce((a,b) => a+b, 0) / pls.length : 0;
+        const plTotal = pls.reduce((a,b) => a+b, 0);
+        const pddMedio = pdds.length > 0 ? pdds.reduce((a,b) => a+b, 0) / pdds.length : 0;
+        const recompraMedia = recompras.length > 0 ? recompras.reduce((a,b) => a+b, 0) / recompras.length : 0;
+        const rentMedia = rents.length > 0 ? rents.reduce((a,b) => a+b, 0) / rents.length : 0;
+        const totalSacados = sacados.reduce((a,b) => a+b, 0);
+        const totalCedentes = cedentes.reduce((a,b) => a+b, 0);
 
         div.innerHTML = `
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
@@ -669,8 +671,12 @@
                     <div style="font-size:22px;font-weight:700;">${total}</div>
                 </div>
                 <div style="background:#f8fafc;border-radius:8px;padding:16px;">
+                    <div style="font-size:11px;color:#64748b;">PL Total</div>
+                    <div style="font-size:22px;font-weight:700;">${formatarPL(plTotal)}</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:8px;padding:16px;">
                     <div style="font-size:11px;color:#64748b;">PL Médio</div>
-                    <div style="font-size:22px;font-weight:700;">${formatarPL(plMedio)}</div>
+                    <div style="font-size:22px;font-weight:700;">${formatarPLcurto(plMedio)}</div>
                 </div>
                 <div style="background:#f8fafc;border-radius:8px;padding:16px;">
                     <div style="font-size:11px;color:#64748b;">PDD Médio</div>
@@ -681,21 +687,24 @@
                     <div style="font-size:22px;font-weight:700;">${formatarPct(recompraMedia)}</div>
                 </div>
                 <div style="background:#f8fafc;border-radius:8px;padding:16px;">
+                    <div style="font-size:11px;color:#64748b;">Rentabilidade Média</div>
+                    <div style="font-size:22px;font-weight:700;">${formatarPct(rentMedia)}</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:8px;padding:16px;">
                     <div style="font-size:11px;color:#64748b;">Total Sacados</div>
                     <div style="font-size:22px;font-weight:700;">${formatarNum(totalSacados)}</div>
                 </div>
                 <div style="background:#f8fafc;border-radius:8px;padding:16px;">
                     <div style="font-size:11px;color:#64748b;">Total Cedentes</div>
-                    <div style="font-size:22px;font-weight:700;">${formatarNum(totalCed)}</div>
+                    <div style="font-size:22px;font-weight:700;">${formatarNum(totalCedentes)}</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:8px;padding:16px;">
+                    <div style="font-size:11px;color:#64748b;">Fundos c/ PDD</div>
+                    <div style="font-size:22px;font-weight:700;">${pdds.length}</div>
                 </div>
             </div>
         `;
     }
-
-    carregarDados();
-</script>
-</body>
-</html>
 
     carregarDados();
 </script>
