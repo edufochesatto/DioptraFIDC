@@ -12,15 +12,16 @@ def limpar_valor(valor):
     except:
         return 0.0
 
-def processar_dados_cvm(raw_dir):
-    raw_path = Path(raw_dir)
-    if not raw_path.exists():
-        print(f"  Pasta {raw_path} nao encontrada!")
+def processar_dados_cvm(data_dir):
+    data_path = Path(data_dir)
+    if not data_path.exists():
+        print(f"  Pasta {data_path} nao encontrada!")
         return pd.DataFrame()
 
-    arquivos = list(raw_path.glob("*tab_I*"))
+    # Procura arquivo tab_I na pasta data/
+    arquivos = list(data_path.glob("*tab_I*"))
     if not arquivos:
-        print(f"  Nenhum arquivo tab_I encontrado")
+        print(f"  Nenhum arquivo tab_I encontrado em {data_path}")
         return pd.DataFrame()
 
     arquivo = arquivos[0]
