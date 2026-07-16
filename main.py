@@ -15,17 +15,19 @@ def main():
     print("DIOPTRA FIDC")
     print("=" * 60)
 
-    print("\n[1/2] Lendo CSVs da pasta data/raw/...")
-    df = processar_dados_cvm(DATA_DIR / "raw")
+    print("\n[1/2] Lendo CSVs da pasta data/...")
+    df = processar_dados_cvm(DATA_DIR)
 
     print("\n[2/2] Gerando dados.json...")
 
     fundos = []
     if not df.empty and 'VL_PL' in df.columns:
+        # Converte de reais para milhoes
         if df['VL_PL'].max() > 1e8:
             df['VL_PL'] = df['VL_PL'] / 1e6
             print(f"  PL convertido de reais para milhoes")
 
+        # Filtra PLs negativos e absurdos
         mask = df['VL_PL'].apply(lambda x: isinstance(x, (int, float)) and x >= 0 and x < 500000)
         df = df[mask]
         df = df.replace([np.inf, -np.inf], np.nan)
@@ -44,6 +46,11 @@ def main():
                 else:
                     d[col] = val
             fundos.append(d)
+
+        print(f"  {len(fundos)} fundos com PL > 0")
+        if fundos:
+            nomes = [f.get('DENOMINACAO_SOCIAL', '')[:60] for f in fundos[:3]]
+            print(f"  Exemplos: {nomes}")
 
     with open(DOCS_DIR / "dados.json", "w") as f:
         json.dump({
