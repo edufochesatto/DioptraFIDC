@@ -1,6 +1,6 @@
 """
-Módulo de processamento e análise dos dados de FIDCs.
-ATUALIZADO: 16/07/2026 — Novo schema CVM (TAB_IV substituiu TAB_I)
+data_processor.py — v3.0
+Adaptado ao schema CVM 202606 (TAB_IV sem coluna de classificação)
 """
 import pandas as pd
 import numpy as np
@@ -23,15 +23,10 @@ def _encontrar_coluna(df, *candidatos):
     return None
 
 def carregar_tabela(data_dir, nome_exato):
-    """
-    Carrega CSV usando padrão exato _NOME_ para evitar
-    que 'tab_I' corresponda a 'tab_III'.
-    """
+    """Carrega CSV usando padrão exato _NOME_."""
     data_dir = Path(data_dir)
-    # Padrão seguro: começa com 'inf_mensal_fidc_tab_' + nome + '_' + YYYYMM
     matches = sorted(data_dir.glob(f"inf_mensal_fidc_tab_{nome_exato}_*.csv"))
     if not matches:
-        # Fallback: qualquer .csv contendo o nome exato isolado
         matches = sorted(data_dir.glob(f"*_tab_{nome_exato}_*.csv"))
     if not matches:
         return None
@@ -46,7 +41,7 @@ def carregar_tabela(data_dir, nome_exato):
         return None
 
 def tratar_numericos(df):
-    """Converte colunas numéricas para float."""
+    """Converte colunas para float."""
     for col in df.columns:
         if df[col].dtype == object:
             tentativa = pd.to_numeric(
@@ -61,52 +56,50 @@ def tratar_numericos(df):
 
 def processar_duplicatas_pme(data_dir):
     """
-    Pipeline completo adaptado ao novo schema CVM (Junho/2026+).
-    Retorna (df_completo, dict_metricas).
+    Pipeline completo adaptado ao schema CVM 202606.
+    OBS: A TAB_IV não tem mais coluna de classificação (CLASSE).
+    Processamos todos os fundos disponíveis.
     """
     # ── 1. Fundos — TAB_IV ──
     tab_iv = carregar_tabela(data_dir, "IV")
     if tab_iv is None or tab_iv.empty:
         raise FileNotFoundError("TAB_IV (fundos) não encontrada.")
 
-    # Renomeia colunas do novo schema
-    rename_fundos = {
+    # Mostra valores únicos de TP_FUNDO_CLASSE para debug
+    if 'TP_FUNDO_CLASSE' in tab_iv.columns:
+        valores = tab_iv['TP_FUNDO_CLASSE'].dropna().unique().tolist()
+        print(f"   [DEBUG] TP_FUNDO_CLASSE: {valores}")
+
+    # Filtra apenas linhas com TP_FUNDO_CLASSE = 'Fundo' (dados individuais)
+    # e descarta linhas agregadas 'Classe'
+    if 'TP_FUNDO_CLASSE' in tab_iv.columns:
+        tab_iv = tab_iv[tab_iv['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+        print(f"   → {len(tab_iv)} fundos individuais (excluindo agregados 'Classe')")
+    else:
+        print("   [AVISO] Coluna TP_FUNDO_CLASSE não encontrada. Usando todos.")
+
+    if tab_iv.empty:
+        print("   [AVISO] Nenhum fundo individual encontrado.")
+        return tab_iv, {}
+
+    # Renomeia colunas
+    rename = {
         'CNPJ_FUNDO_CLASSE': 'CNPJ_FUNDO',
         'DENOM_SOCIAL': 'DENOMINACAO_SOCIAL',
-        'TP_FUNDO_CLASSE': 'CLASSE',
         'TAB_IV_A_VL_PL': 'VL_PL',
     }
-    tab_iv = tab_iv.rename(columns={
-        k: v for k, v in rename_fundos.items() if k in tab_iv.columns
-    })
+    tab_iv = tab_iv.rename(columns={k: v for k, v in rename.items() if k in tab_iv.columns})
 
-    # Garante CNPJ_FUNDO
     col_cnpj = _encontrar_coluna(tab_iv, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
     if col_cnpj and col_cnpj != 'CNPJ_FUNDO':
         tab_iv = tab_iv.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
     if 'CNPJ_FUNDO' not in tab_iv.columns:
-        raise KeyError("CNPJ não encontrado em nenhuma coluna da TAB_IV.")
+        raise KeyError("CNPJ não encontrado.")
 
     tab_iv = tratar_numericos(tab_iv)
     tab_iv['CNPJ_FUNDO'] = tab_iv['CNPJ_FUNDO'].astype(str).str.strip()
 
-    # Filtra Duplicatas/PME
-    col_classe = _encontrar_coluna(tab_iv, 'CLASSE', 'TP_FUNDO_CLASSE')
-    if col_classe:
-        if col_classe != 'CLASSE':
-            tab_iv = tab_iv.rename(columns={col_classe: 'CLASSE'})
-        # Mostra valores únicos de CLASSE para debug
-        print(f"   [DEBUG] Valores de CLASSE disponíveis: {tab_iv['CLASSE'].dropna().unique().tolist()}")
-        mask = tab_iv['CLASSE'].astype(str).str.upper().str.contains(
-            'DUPLICATA|PME|DUPLICATAS', na=False, regex=True
-        )
-        tab_iv = tab_iv[mask].copy()
-        print(f"   → {len(tab_iv)} fundos Duplicatas/PME encontrados")
-    else:
-        print("   [AVISO] Coluna CLASSE não encontrada. Usando todos os fundos.")
-
-    if tab_iv.empty:
-        return tab_iv, {}
+    print(f"   → {len(tab_iv)} fundos disponíveis")
 
     df = tab_iv[['CNPJ_FUNDO']].copy()
 
@@ -121,7 +114,10 @@ def processar_duplicatas_pme(data_dir):
             tab_vi['CNPJ_FUNDO'] = tab_vi['CNPJ_FUNDO'].astype(str).str.strip()
             tab_vi = tratar_numericos(tab_vi)
 
-            # Calcula prazo médio ponderado das faixas de vencimento
+            # Filtra apenas linhas de fundo individual
+            if 'TP_FUNDO_CLASSE' in tab_vi.columns:
+                tab_vi = tab_vi[tab_vi['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+
             dias_por_coluna = {
                 'TAB_VI_A1_VL_PRAZO_VENC_30': 15,
                 'TAB_VI_A2_VL_PRAZO_VENC_60': 45,
@@ -160,16 +156,16 @@ def processar_duplicatas_pme(data_dir):
             tab_vii['CNPJ_FUNDO'] = tab_vii['CNPJ_FUNDO'].astype(str).str.strip()
             tab_vii = tratar_numericos(tab_vii)
 
-            # Recompra
-            col_rec = _encontrar_coluna(
-                tab_vii, 'TAB_VII_D_2_VL_RECOMPRA', 'TAB_VII_D_3_VL_CONTAB_RECOMPRA'
-            )
+            # Filtra apenas fundos individuais
+            if 'TP_FUNDO_CLASSE' in tab_vii.columns:
+                tab_vii = tab_vii[tab_vii['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+
+            col_rec = _encontrar_coluna(tab_vii, 'TAB_VII_D_2_VL_RECOMPRA', 'TAB_VII_D_3_VL_CONTAB_RECOMPRA')
             if col_rec:
                 recompra_df = tab_vii.groupby('CNPJ_FUNDO').agg(
                     INDICE_RECOMPRA=(col_rec, 'sum')
                 ).reset_index()
 
-            # Cedentes (quantidade)
             col_qt_ced = _encontrar_coluna(tab_vii, 'TAB_VII_B1_1_QT_CEDENTE')
             if col_qt_ced:
                 cedentes_df = tab_vii.groupby('CNPJ_FUNDO').agg(
@@ -186,13 +182,18 @@ def processar_duplicatas_pme(data_dir):
                 tab_v = tab_v.rename(columns={col_cnpj_v: 'CNPJ_FUNDO'})
             tab_v['CNPJ_FUNDO'] = tab_v['CNPJ_FUNDO'].astype(str).str.strip()
             tab_v = tratar_numericos(tab_v)
+
+            # Filtra apenas fundos individuais
+            if 'TP_FUNDO_CLASSE' in tab_v.columns:
+                tab_v = tab_v[tab_v['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+
             col_pdd = _encontrar_coluna(tab_v, 'VL_PDD', 'VL_PROVISAO')
             if col_pdd:
                 pdd_df = tab_v.groupby('CNPJ_FUNDO').agg(PDD=(col_pdd, 'sum')).reset_index()
 
     # ── Merge ──
     merges = [
-        ('PL', tab_iv[['CNPJ_FUNDO', 'VL_PL']] if 'VL_PL' in tab_iv.columns else None),
+        ('PL', tab_iv[['CNPJ_FUNDO', 'VL_PL']] if 'VL_PL' in tab_iv.columns and not tab_iv.empty else None),
         ('Prazo', prazo_df),
         ('Recompra', recompra_df),
         ('PDD', pdd_df),
@@ -208,15 +209,11 @@ def processar_duplicatas_pme(data_dir):
     if 'VL_PL' in df.columns:
         df['VL_PL'] = pd.to_numeric(df['VL_PL'], errors='coerce').fillna(0)
         if 'PDD' in df.columns:
-            df['PDD_PCT'] = round(
-                df['PDD'] / df['VL_PL'].replace(0, np.nan) * 100, 2
-            )
+            df['PDD_PCT'] = round(df['PDD'] / df['VL_PL'].replace(0, np.nan) * 100, 2)
         if 'INDICE_RECOMPRA' in df.columns:
-            df['RECOMPRA_PCT'] = round(
-                df['INDICE_RECOMPRA'] / df['VL_PL'].replace(0, np.nan) * 100, 2
-            )
+            df['RECOMPRA_PCT'] = round(df['INDICE_RECOMPRA'] / df['VL_PL'].replace(0, np.nan) * 100, 2)
 
-    # Métricas de governança
+    # ── Métricas de governança ──
     metricas = {}
     cols_metricas = {
         'VL_PL': 'PL', 'PRAZO_MEDIO': 'Prazo Médio',
