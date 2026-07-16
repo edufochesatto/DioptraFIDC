@@ -172,6 +172,29 @@ def processar_duplicatas_pme(data_dir):
                 cedentes_df = tab_vii.groupby('CNPJ_FUNDO').agg(
                     NUM_CEDENTES=(col_qt_ced, 'sum')
                 ).reset_index()
+                    # ── 5. Sacados — TAB_II ──
+    tab_ii = carregar_tabela(data_dir, "II")
+    sacados_df = None
+    if tab_ii is not None and not tab_ii.empty:
+        col_cnpj = _encontrar_coluna(tab_ii, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+        if col_cnpj:
+            if col_cnpj != 'CNPJ_FUNDO':
+                tab_ii = tab_ii.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
+            tab_ii['CNPJ_FUNDO'] = tab_ii['CNPJ_FUNDO'].astype(str).str.strip()
+            if 'TP_FUNDO_CLASSE' in tab_ii.columns:
+                tab_ii = tab_ii[tab_ii['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+            tab_ii = tratar_numericos(tab_ii)
+
+            col_qt_sac = _encontrar_coluna(tab_ii, 'TAB_II_A1_1_QT_SACADO')
+            if col_qt_sac:
+                tab_ii[col_qt_sac] = pd.to_numeric(tab_ii[col_qt_sac], errors='coerce').fillna(0)
+                sacados_df = tab_ii.groupby('CNPJ_FUNDO').agg(
+                    NUM_SACADOS=(col_qt_sac, 'sum')
+                ).reset_index()
+            else:
+                sacados_df = tab_ii.groupby('CNPJ_FUNDO').agg(
+                    NUM_SACADOS=('CNPJ_FUNDO', 'count')
+                ).reset_index()
 
     # TAB_V - PDD
     tab_v = carregar_tabela(data_dir, "V")
@@ -199,6 +222,8 @@ def processar_duplicatas_pme(data_dir):
     merges = [
         ('Prazo', prazo_df), ('Recompra', recompra_df),
         ('PDD', pdd_df), ('Cedentes', cedentes_df),
+        ('Sacados', sacados_df),
+    ]
     ]
     for nome, tbl in merges:
         if tbl is not None and not tbl.empty:
@@ -207,6 +232,7 @@ def processar_duplicatas_pme(data_dir):
                 for c in cols:
                     tbl[c] = pd.to_numeric(tbl[c], errors='coerce').fillna(0)
                 df = df.merge(tbl[['CNPJ_FUNDO'] + cols], on='CNPJ_FUNDO', how='left')
+                
 
     # Métricas derivadas
     if 'VL_PL' in df.columns:
@@ -224,10 +250,11 @@ def processar_duplicatas_pme(data_dir):
 
     # Métricas de governança
     metricas = {}
-    cols_metricas = {
+        cols_metricas = {
         'VL_PL': 'PL', 'PRAZO_MEDIO': 'Prazo Médio',
         'PDD_PCT': 'PDD %PL', 'RECOMPRA_PCT': 'Recompra %PL',
         'NUM_CEDENTES': 'Nº Cedentes',
+        'NUM_SACADOS': 'Nº Sacados',
     }
     for col in cols_metricas:
         if col in df.columns and df[col].notna().sum() > 0:
