@@ -1,6 +1,6 @@
 """
 Dioptra FIDC — Orquestrador principal.
-Baixa dados da CVM, processa e gera o dashboard.
+Baixa dados da CVM, processa, filtra e gera o dashboard.
 """
 import sys
 from pathlib import Path
@@ -17,6 +17,7 @@ def main():
     print("DIOPTRA FIDC")
     print("=" * 60)
 
+    # 1. Download
     print("\n[1/4] Baixando dados mais recentes da CVM...")
     try:
         obter_dados_recentes(DATA_DIR, meses=1)
@@ -24,13 +25,13 @@ def main():
         print(f"[ERRO] Download: {e}")
         sys.exit(1)
 
+    # 2. Listar arquivos baixados
     print("\n[2/4] Arquivos disponíveis:")
     for f in sorted(DATA_DIR.glob("*.csv")):
         print(f"   {f.name}")
 
+    # 3. Processar
     print("\n[3/4] Processando dados...")
-    print("   [INFO] Schema CVM 202606 — processando todos os fundos.")
-
     try:
         df, metricas = processar_duplicatas_pme(DATA_DIR)
     except Exception as e:
@@ -40,18 +41,14 @@ def main():
         sys.exit(1)
 
     if df.empty:
-        print("[AVISO] Nenhum fundo encontrado.")
+        print("[AVISO] Nenhum fundo Duplicatas/PME encontrado.")
+        print("Verifique se a coluna CLASSE contém 'Duplicata' ou 'PME'.")
         sys.exit(1)
 
-    print(f"\n   → {len(df)} fundos processados")
-    print(f"   → {len(metricas)} métricas calculadas")
-    print(f"   → Colunas: {list(df.columns)}")
+    print(f"\n   → {len(df)} fundos processados.")
+    print(f"   → {len(metricas)} métricas calculadas.")
 
-    # Debug: mostra tipos das colunas
-    for col in df.columns:
-        if col != 'CNPJ_FUNDO' and col != 'DENOMINACAO_SOCIAL':
-            print(f"      {col}: tipo={df[col].dtype}, amostra={df[col].head(3).tolist()}")
-
+    # 4. Dashboard
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     print("\n[4/4] Gerando dashboard...")
     gerar_dashboard(df, metricas, OUTPUT_FILE)
