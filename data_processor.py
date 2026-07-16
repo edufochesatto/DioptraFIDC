@@ -214,16 +214,17 @@ def processar_duplicatas_pme(data_dir):
                 tab_v[col_pdd] = pd.to_numeric(tab_v[col_pdd], errors='coerce').fillna(0)
                 pdd_df = tab_v.groupby('CNPJ_FUNDO').agg(PDD=(col_pdd, 'sum')).reset_index()
 
-    # Merge
+    #    # ── Merge ──
     if 'VL_PL' in tab_iv.columns:
         tab_iv['VL_PL'] = pd.to_numeric(tab_iv['VL_PL'], errors='coerce').fillna(0)
         df = df.merge(tab_iv[['CNPJ_FUNDO', 'VL_PL']], on='CNPJ_FUNDO', how='left')
 
     merges = [
-        ('Prazo', prazo_df), ('Recompra', recompra_df),
-        ('PDD', pdd_df), ('Cedentes', cedentes_df),
+        ('Prazo', prazo_df),
+        ('Recompra', recompra_df),
+        ('PDD', pdd_df),
+        ('Cedentes', cedentes_df),
         ('Sacados', sacados_df),
-    ]
     ]
     for nome, tbl in merges:
         if tbl is not None and not tbl.empty:
@@ -232,8 +233,6 @@ def processar_duplicatas_pme(data_dir):
                 for c in cols:
                     tbl[c] = pd.to_numeric(tbl[c], errors='coerce').fillna(0)
                 df = df.merge(tbl[['CNPJ_FUNDO'] + cols], on='CNPJ_FUNDO', how='left')
-                
-
     # Métricas derivadas
     if 'VL_PL' in df.columns:
         df['VL_PL'] = pd.to_numeric(df['VL_PL'], errors='coerce').fillna(0)
