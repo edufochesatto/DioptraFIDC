@@ -28,35 +28,13 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install pandas numpy openpyxl requests
+        run: pip install pandas numpy openpyxl requests
 
       - name: Run Dioptra FIDC
-        run: |
-          python main.py
+        run: python main.py
 
       - name: Gerar dados.json para o site
-        run: |
-          python -c "
-import json
-import pandas as pd
-try:
-    df = pd.read_pickle('output/dados.pkl')
-    fundos = df.fillna(0).to_dict('records')
-    metricas = {}
-    print(f'✅ {len(fundos)} fundos exportados para dados.json')
-except:
-    fundos = []
-    metricas = {}
-    print('⚠ Nenhum dado pickle encontrado, usando JSON vazio')
-with open('docs/dados.json', 'w') as f:
-    json.dump({
-        'fundos': fundos,
-        'metricas': metricas,
-        'gerado_em': '2026-07-16',
-        'versao': 'Julho/2026'
-    }, f, indent=2, ensure_ascii=False, default=str)
-"
+        run: python scripts/gerar_dados_json.py
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
