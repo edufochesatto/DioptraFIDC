@@ -286,22 +286,31 @@
                 if (!resp.ok) throw new Error('Arquivo dados.json não encontrado');
                 const json = await resp.json();
                 dadosFundos = json.fundos || [];
-                atualizarTudo();
+                Tudo();
             } catch (e) {
                 // Fallback: gerar dados sintéticos para demonstração
                 console.warn('Usando dados sintéticos de demonstração:', e.message);
                 gerarDadosSinteticos();
-                atualizarTudo();
+                Tudo();
             }
         }
 
-        function gerarDadosSinteticos() {
-            const cnpjs = [
-                '00.000.001/0001-01','00.000.002/0001-02','00.000.003/0001-03',
-                '00.000.004/0001-04','00.000.005/0001-05','00.000.006/0001-06',
-                '00.000.007/0001-07','00.000.008/0001-08','00.000.009/0001-09',
-                '00.000.010/0001-10',
+                function gerarDadosSinteticos() {
+            // Fallback caso dados.json não carregue
+            dadosFundos = [
+                {CNPJ_FUNDO:"00.000.001/0001-01",DENOMINACAO_SOCIAL:"FIDC Premium Corporate",VL_PL:623.45,PRAZO_MEDIO:87,RENTABILIDADE:15.32,PDD_PCT:2.15,RECOMPRA_PCT:82.5,NUM_CEDENTES:45,NUM_SACADOS:312,OVERCOLLATERALIZATION:1.85,PCT_LIQUIDEZ:18.2,CONC_TOP5_SACADOS:28.5,CONC_TOP5_CEDENTES:35.2,PCT_VENCIDOS:0.85,PCT_SUBORDINADO:22,RATING:"AAA",CLASSE:"Duplicatas",GESTORA:"XP Asset"},
+                {CNPJ_FUNDO:"00.000.002/0001-02",DENOMINACAO_SOCIAL:"FIDC Alpha Absoluto",VL_PL:521.78,PRAZO_MEDIO:42,RENTABILIDADE:14.85,PDD_PCT:1.78,RECOMPRA_PCT:91.2,NUM_CEDENTES:72,NUM_SACADOS:487,OVERCOLLATERALIZATION:2.15,PCT_LIQUIDEZ:22.5,CONC_TOP5_SACADOS:22.1,CONC_TOP5_CEDENTES:28.9,PCT_VENCIDOS:0.42,PCT_SUBORDINADO:28,RATING:"AAA",CLASSE:"Duplicatas",GESTORA:"BTG Pactual"},
+                {CNPJ_FUNDO:"00.000.003/0001-03",DENOMINACAO_SOCIAL:"FIDC Beta Recebíveis",VL_PL:445.12,PRAZO_MEDIO:135,RENTABILIDADE:12.94,PDD_PCT:3.42,RECOMPRA_PCT:67.8,NUM_CEDENTES:28,NUM_SACADOS:156,OVERCOLLATERALIZATION:1.45,PCT_LIQUIDEZ:9.8,CONC_TOP5_SACADOS:52.3,CONC_TOP5_CEDENTES:61.7,PCT_VENCIDOS:2.35,PCT_SUBORDINADO:15,RATING:"AA",CLASSE:"Duplicatas",GESTORA:"Itaú Asset"},
+                {CNPJ_FUNDO:"00.000.004/0001-04",DENOMINACAO_SOCIAL:"FIDC Gama Crédito",VL_PL:389.90,PRAZO_MEDIO:112,RENTABILIDADE:13.45,PDD_PCT:2.89,RECOMPRA_PCT:75.3,NUM_CEDENTES:35,NUM_SACADOS:234,OVERCOLLATERALIZATION:1.62,PCT_LIQUIDEZ:12.5,CONC_TOP5_SACADOS:41.8,CONC_TOP5_CEDENTES:48.2,PCT_VENCIDOS:1.78,PCT_SUBORDINADO:20,RATING:"AA+",CLASSE:"Duplicatas",GESTORA:"Bradesco Asset"},
+                {CNPJ_FUNDO:"00.000.005/0001-05",DENOMINACAO_SOCIAL:"FIDC Delta Performance",VL_PL:312.55,PRAZO_MEDIO:65,RENTABILIDADE:16.21,PDD_PCT:1.25,RECOMPRA_PCT:88.9,NUM_CEDENTES:56,NUM_SACADOS:423,OVERCOLLATERALIZATION:2.35,PCT_LIQUIDEZ:24.1,CONC_TOP5_SACADOS:18.7,CONC_TOP5_CEDENTES:25.4,PCT_VENCIDOS:0.35,PCT_SUBORDINADO:32,RATING:"AAA",CLASSE:"Duplicatas",GESTORA:"Santander AM"},
+                {CNPJ_FUNDO:"00.000.006/0001-06",DENOMINACAO_SOCIAL:"FIDC Épsilon Plus",VL_PL:267.30,PRAZO_MEDIO:158,RENTABILIDADE:11.73,PDD_PCT:4.12,RECOMPRA_PCT:55.6,NUM_CEDENTES:18,NUM_SACADOS:87,OVERCOLLATERALIZATION:1.22,PCT_LIQUIDEZ:6.3,CONC_TOP5_SACADOS:58.9,CONC_TOP5_CEDENTES:68.4,PCT_VENCIDOS:3.87,PCT_SUBORDINADO:12,RATING:"A+",CLASSE:"Duplicatas",GESTORA:"Safra Asset"},
+                {CNPJ_FUNDO:"00.000.007/0001-07",DENOMINACAO_SOCIAL:"FIDC Zeta Seleção",VL_PL:198.40,PRAZO_MEDIO:93,RENTABILIDADE:14.28,PDD_PCT:2.55,RECOMPRA_PCT:79.4,NUM_CEDENTES:42,NUM_SACADOS:278,OVERCOLLATERALIZATION:1.78,PCT_LIQUIDEZ:15.7,CONC_TOP5_SACADOS:35.6,CONC_TOP5_CEDENTES:42.8,PCT_VENCIDOS:1.45,PCT_SUBORDINADO:25,RATING:"AA",CLASSE:"Duplicatas",GESTORA:"Vinci Partners"},
+                {CNPJ_FUNDO:"00.000.008/0001-08",DENOMINACAO_SOCIAL:"FIDC Eta Institucional",VL_PL:156.80,PRAZO_MEDIO:45,RENTABILIDADE:15.78,PDD_PCT:1.95,RECOMPRA_PCT:85.7,NUM_CEDENTES:63,NUM_SACADOS:356,OVERCOLLATERALIZATION:2.05,PCT_LIQUIDEZ:20.8,CONC_TOP5_SACADOS:25.3,CONC_TOP5_CEDENTES:32.1,PCT_VENCIDOS:0.65,PCT_SUBORDINADO:30,RATING:"AAA",CLASSE:"Duplicatas",GESTORA:"Rio Bravo"},
+                {CNPJ_FUNDO:"00.000.009/0001-09",DENOMINACAO_SOCIAL:"FIDC Theta Premier",VL_PL:98.25,PRAZO_MEDIO:172,RENTABILIDADE:10.85,PDD_PCT:4.85,RECOMPRA_PCT:48.2,NUM_CEDENTES:12,NUM_SACADOS:52,OVERCOLLATERALIZATION:1.15,PCT_LIQUIDEZ:4.5,CONC_TOP5_SACADOS:62.4,CONC_TOP5_CEDENTES:73.1,PCT_VENCIDOS:4.55,PCT_SUBORDINADO:11,RATING:"A",CLASSE:"Duplicatas",GESTORA:"BRZ Asset"},
+                {CNPJ_FUNDO:"00.000.010/0001-10",DENOMINACAO_SOCIAL:"FIDC Iota Leader",VL_PL:78.90,PRAZO_MEDIO:55,RENTABILIDADE:17.42,PDD_PCT:1.05,RECOMPRA_PCT:93.8,NUM_CEDENTES:78,NUM_SACADOS:498,OVERCOLLATERALIZATION:2.45,PCT_LIQUIDEZ:25.6,CONC_TOP5_SACADOS:16.2,CONC_TOP5_CEDENTES:22.5,PCT_VENCIDOS:0.28,PCT_SUBORDINADO:35,RATING:"AAA",CLASSE:"Duplicatas",GESTORA:"Kanitz Asset"},
             ];
+            console.log(`✅ ${dadosFundos.length} fundos sintéticos carregados (fallback)`);
+        }
             dadosFundos = cnpjs.map((cnpj,i) => ({
                 CNPJ_FUNDO: cnpj,
                 VL_PL: Math.round((Math.random() * 500 + 50) * 100) / 100,
@@ -314,7 +323,7 @@
             dadosFundos.sort((a,b) => b.VL_PL - a.VL_PL);
         }
 
-        function atualizarTudo() {
+        function Tudo() {
             const total = dadosFundos.length;
             if (total === 0) return;
 
@@ -330,7 +339,10 @@
 
             document.getElementById('kpi-total').textContent = total;
             document.getElementById('kpi-rent-media').textContent = (12.67).toFixed(2) + '%';
-            document.getElementById('kpi-melhor').textContent = plMax.toFixed(2);
+                        // Melhor FIDC (maior rentabilidade)
+            const rents = dadosFundos.map(f => f.RENTABILIDADE || 0).filter(v => v > 0);
+            const melhorRent = rents.length > 0 ? Math.max(...rents) : 0;
+            document.getElementById('kpi-melhor').textContent = melhorRent > 0 ? melhorRent.toFixed(2) + '%' : '—';;
             document.getElementById('kpi-prazo').textContent = Math.round(prazos.reduce((a,b) => a+b, 0) / total);
             document.getElementById('kpi-pdd').textContent = (2.02).toFixed(2) + '%';
 
@@ -342,19 +354,24 @@
             atualizarGlossario();
             renderizarGraficos();
         }
-
         function atualizarRanking() {
             const tbody = document.getElementById('ranking-body');
+            if (!dadosFundos || dadosFundos.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#6b7280;">Nenhum fundo disponível</td></tr>';
+                return;
+            }
             tbody.innerHTML = dadosFundos.map(f => `
                 <tr>
-                    <td>${f.CNPJ_FUNDO}</td>
-                    <td class="num">${(f.VL_PL || 0).toFixed(2)}</td>
+                    <td>${f.CNPJ_FUNDO || '---'}</td>
+                    <td class="num">${(f.VL_PL || 0) > 0 ? (f.VL_PL || 0).toFixed(2) : '0,00'}</td>
                     <td class="num">${f.PRAZO_MEDIO || 0}</td>
                     <td class="num ${(f.RECOMPRA_PCT || 0) > 50 ? 'green' : ''}">${(f.RECOMPRA_PCT || 0).toFixed(2)}%</td>
+                    <td class="num">${f.NUM_SACADOS || 0}</td>
                     <td class="num">${f.NUM_CEDENTES || 0}</td>
                 </tr>
             `).join('');
         }
+        
 
         function atualizarTop10() {
             // Top 10 PL
