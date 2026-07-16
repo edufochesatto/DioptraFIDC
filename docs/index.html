@@ -20,6 +20,7 @@
             padding: 24px 0;
             display: flex;
             flex-direction: column;
+            flex-shrink: 0;
         }
         .sidebar-brand {
             padding: 0 20px 24px;
@@ -48,6 +49,7 @@
             color: #cbd5e1;
             text-decoration: none;
             font-size: 14px;
+            cursor: pointer;
             transition: all 0.2s;
         }
         .sidebar-nav a:hover, .sidebar-nav a.active {
@@ -126,7 +128,7 @@
         .benchmark-card {
             background: #fff;
             border-radius: 10px;
-            padding: 16px;
+            padding: 16px 20px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.06);
         }
         .benchmark-card .label {
@@ -197,6 +199,12 @@
             color: #1e293b;
             box-shadow: 0 1px 2px rgba(0,0,0,0.08);
         }
+        .page {
+            display: none;
+        }
+        .page.active {
+            display: block;
+        }
         .table-card {
             background: #fff;
             border-radius: 10px;
@@ -240,6 +248,46 @@
             color: #94a3b8;
             font-size: 14px;
         }
+        .glossario-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 12px;
+        }
+        .glossario-item {
+            background: #fff;
+            border-radius: 8px;
+            padding: 14px 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .glossario-item h4 {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #0a1628;
+        }
+        .glossario-item p {
+            font-size: 12px;
+            color: #64748b;
+        }
+        .sobre-content {
+            background: #fff;
+            border-radius: 10px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            max-width: 700px;
+        }
+        .sobre-content p {
+            font-size: 14px;
+            color: #475569;
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }
+        .sobre-content h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 20px 0 8px;
+            color: #0a1628;
+        }
         .footer {
             margin-top: 32px;
             padding: 16px 0;
@@ -265,11 +313,11 @@
         <small>Governança & Transparência</small>
     </div>
     <nav class="sidebar-nav">
-        <a href="#" class="active"><span class="icon">📊</span> Ranking</a>
-        <a href="#"><span class="icon">🏆</span> Top 10</a>
-        <a href="#"><span class="icon">🛡️</span> Governança</a>
-        <a href="#"><span class="icon">📖</span> Glossário</a>
-        <a href="#"><span class="icon">ℹ️</span> Sobre</a>
+        <a onclick="irPara('ranking')" class="active" id="nav-ranking"><span class="icon">📊</span> Ranking</a>
+        <a onclick="irPara('top10')" id="nav-top10"><span class="icon">🏆</span> Top 10</a>
+        <a onclick="irPara('governanca')" id="nav-governanca"><span class="icon">🛡️</span> Governança</a>
+        <a onclick="irPara('glossario')" id="nav-glossario"><span class="icon">📖</span> Glossário</a>
+        <a onclick="irPara('sobre')" id="nav-sobre"><span class="icon">ℹ️</span> Sobre</a>
     </nav>
     <div class="sidebar-footer">
         v1.0 — Julho/2026<br>
@@ -293,82 +341,192 @@
         ⚠️ As informações apresentadas são baseadas em dados públicos autodeclarados à CVM. Defasagem de 30-45 dias. Não substitui diligência. Use como triagem, não como decisão.
     </div>
 
-    <div class="benchmark-grid">
-        <div class="benchmark-card">
-            <div class="label">IPCA</div>
-            <div class="value">4,50%</div>
-            <div class="change change-up">▲ a.a.</div>
+    <!-- ==================== PÁGINA: RANKING ==================== -->
+    <div id="page-ranking" class="page active">
+        <div class="benchmark-grid">
+            <div class="benchmark-card">
+                <div class="label">IPCA</div>
+                <div class="value">4,50%</div>
+                <div class="change change-up">▲ a.a.</div>
+            </div>
+            <div class="benchmark-card">
+                <div class="label">IBOVESPA</div>
+                <div class="value">129.650</div>
+                <div class="change change-up">▲ pts</div>
+            </div>
         </div>
-        <div class="benchmark-card">
-            <div class="label">IBOVESPA</div>
-            <div class="value">129.650</div>
-            <div class="change change-up">▲ pts</div>
+
+        <div class="metrics-row">
+            <div class="metric-card">
+                <div class="mlabel">Rentabilidade Média</div>
+                <div class="mvalue" id="kpi-rent-media">—</div>
+                <div class="msub">vs CDI</div>
+            </div>
+            <div class="metric-card">
+                <div class="mlabel">Melhor FIDC</div>
+                <div class="mvalue" id="kpi-melhor">—</div>
+                <div class="msub">% a.a.</div>
+            </div>
+            <div class="metric-card">
+                <div class="mlabel">Fundos Analisados</div>
+                <div class="mvalue" id="kpi-total">—</div>
+                <div class="msub">ativos</div>
+            </div>
+            <div class="metric-card">
+                <div class="mlabel">Prazo Médio</div>
+                <div class="mvalue" id="kpi-prazo">—</div>
+                <div class="msub">dias</div>
+            </div>
+            <div class="metric-card">
+                <div class="mlabel">PDD Médio</div>
+                <div class="mvalue" id="kpi-pdd">—</div>
+                <div class="msub">% do PL</div>
+            </div>
+        </div>
+
+        <div class="tab-bar">
+            <button class="active" onclick="irPara('ranking')">Ranking</button>
+            <button onclick="irPara('top10')">Top 10</button>
+            <button onclick="irPara('governanca')">Governança</button>
+            <button onclick="irPara('glossario')">Glossário</button>
+            <button onclick="irPara('sobre')">Sobre</button>
+        </div>
+
+        <div class="table-card">
+            <h3>Ranking Completo</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>CNPJ do Fundo</th>
+                        <th>PL (R$ milhões)</th>
+                        <th>Prazo Médio</th>
+                        <th>Recompra %</th>
+                        <th>Nº Sacados</th>
+                        <th>Nº Cedentes</th>
+                    </tr>
+                </thead>
+                <tbody id="ranking-body">
+                    <tr><td colspan="6" class="empty">Carregando dados...</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
-    <div class="metrics-row">
-        <div class="metric-card">
-            <div class="mlabel">Rentabilidade Média</div>
-            <div class="mvalue" id="kpi-rent-media">—</div>
-            <div class="msub">vs CDI</div>
+    <!-- ==================== PÁGINA: TOP 10 ==================== -->
+    <div id="page-top10" class="page">
+        <div class="table-card" style="margin-bottom:16px;">
+            <h3>Top 10 — PL</h3>
+            <table>
+                <thead><tr><th>#</th><th>Fundo</th><th>PL (R$ milhões)</th></tr></thead>
+                <tbody id="top10-pl-body"><tr><td colspan="3" class="empty">Carregando...</td></tr></tbody>
+            </table>
         </div>
-        <div class="metric-card">
-            <div class="mlabel">Melhor FIDC</div>
-            <div class="mvalue" id="kpi-melhor">—</div>
-            <div class="msub">% a.a.</div>
-        </div>
-        <div class="metric-card">
-            <div class="mlabel">Fundos Analisados</div>
-            <div class="mvalue" id="kpi-total">—</div>
-            <div class="msub">ativos</div>
-        </div>
-        <div class="metric-card">
-            <div class="mlabel">Prazo Médio</div>
-            <div class="mvalue" id="kpi-prazo">—</div>
-            <div class="msub">dias</div>
-        </div>
-        <div class="metric-card">
-            <div class="mlabel">PDD Médio</div>
-            <div class="mvalue" id="kpi-pdd">—</div>
-            <div class="msub">% do PL</div>
+        <div class="table-card">
+            <h3>Top 10 — Prazo Médio</h3>
+            <table>
+                <thead><tr><th>#</th><th>Fundo</th><th>Dias</th></tr></thead>
+                <tbody id="top10-prazo-body"><tr><td colspan="3" class="empty">Carregando...</td></tr></tbody>
+            </table>
         </div>
     </div>
 
-    <div class="tab-bar">
-        <button class="active">Ranking</button>
-        <button>Top 10</button>
-        <button>Governança</button>
-        <button>Glossário</button>
-        <button>Sobre</button>
+    <!-- ==================== PÁGINA: GOVERNANÇA ==================== -->
+    <div id="page-governanca" class="page">
+        <div class="table-card">
+            <h3>📊 Estatísticas de Governança</h3>
+            <div style="padding:20px;" id="governanca-content">
+                <p style="color:#94a3b8;">Carregando estatísticas...</p>
+            </div>
+        </div>
     </div>
 
-    <div class="table-card">
-        <h3>Ranking Completo</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>CNPJ do Fundo</th>
-                    <th>PL (R$ milhões)</th>
-                    <th>Prazo Médio</th>
-                    <th>Recompra %</th>
-                    <th>Nº Sacados</th>
-                    <th>Nº Cedentes</th>
-                </tr>
-            </thead>
-            <tbody id="ranking-body">
-                <tr><td colspan="6" class="empty">Carregando dados...</td></tr>
-            </tbody>
-        </table>
+    <!-- ==================== PÁGINA: GLOSSÁRIO ==================== -->
+    <div id="page-glossario" class="page">
+        <div class="glossario-grid">
+            <div class="glossario-item">
+                <h4>PL</h4>
+                <p>Patrimônio Líquido do fundo. Valor total dos ativos menos passivos.</p>
+            </div>
+            <div class="glossario-item">
+                <h4>Prazo Médio</h4>
+                <p>Prazo médio ponderado dos recebíveis da carteira, em dias.</p>
+            </div>
+            <div class="glossario-item">
+                <h4>Recompra %</h4>
+                <p>Percentual do PL referente a direitos de recompra. Quanto maior, maior a liquidez potencial.</p>
+            </div>
+            <div class="glossario-item">
+                <h4>PDD %</h4>
+                <p>Provisão para Devedores Duvidosos como percentual do PL. Indica a expectativa de perda.</p>
+            </div>
+            <div class="glossario-item">
+                <h4>Nº Cedentes</h4>
+                <p>Quantidade de cedentes (origiadores) dos recebíveis no fundo.</p>
+            </div>
+            <div class="glossario-item">
+                <h4>Nº Sacados</h4>
+                <p>Quantidade de sacados (devedores) dos recebíveis. Maior diversificação = menor risco.</p>
+            </div>
+            <div class="glossario-item">
+                <h4>CDI</h4>
+                <p>Certificado de Depósito Interbancário. Taxa de referência do mercado interbancário brasileiro.</p>
+            </div>
+            <div class="glossario-item">
+                <h4>IPCA</h4>
+                <p>Índice Nacional de Preços ao Consumidor Amplo. Medida oficial de inflação do Brasil.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PÁGINA: SOBRE ==================== -->
+    <div id="page-sobre" class="page">
+        <div class="sobre-content">
+            <h3>Sobre o Dioptra FIDC</h3>
+            <p><em>Dioptra</em> — do grego <strong>διόπτρα</strong>, instrumento para <em>"ver através"</em>.</p>
+            <p>Dashboard automatizado de FIDCs de Duplicatas e PME com métricas de governança, comparação com benchmarks e análise inspirada nos 3 pilares de Basileia.</p>
+            <h3>Dados</h3>
+            <p>Os dados são obtidos do <strong>Portal Dados Abertos CVM</strong> (Informe Mensal FIDC), processados automaticamente via GitHub Actions.</p>
+            <h3>Licença</h3>
+            <p>MIT &mdash; uso livre, dados públicos.</p>
+            <p style="margin-top:16px;">
+                <a href="https://github.com/edufochesatto/DioptraFIDC" target="_blank" style="color:#3b82f6;">→ Repositório no GitHub</a>
+            </p>
+        </div>
     </div>
 
     <div class="footer">
-        <span>Dioptra FIDC — Eduardo Fochesatto — <a href="https://github.com/edufochesatto/DioptraFIDC" target="_blank">Repositório</a></span>
+        <span>Dioptra FIDC — Eduardo Fochesatto</span>
         <span>Dados públicos CVM · Licença MIT · Julho/2026</span>
     </div>
 </div>
 
 <script>
     let dadosFundos = [];
+
+    function irPara(pagina) {
+        // Esconde todas as páginas
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        // Mostra a página alvo
+        const alvo = document.getElementById('page-' + pagina);
+        if (alvo) alvo.classList.add('active');
+
+        // Sidebar: remove active de todos e ativa o correto
+        document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.remove('active'));
+        const navItem = document.getElementById('nav-' + pagina);
+        if (navItem) navItem.classList.add('active');
+
+        // Tab bar: remove active de todos e ativa o correto (se existir na tab)
+        document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-bar button').forEach(b => {
+            if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + pagina + "'")) {
+                b.classList.add('active');
+            }
+        });
+
+        // Atualiza conteúdo específico se necessário
+        if (pagina === 'top10') atualizarTop10();
+        if (pagina === 'governanca') atualizarGovernanca();
+    }
 
     async function carregarDados() {
         try {
@@ -385,11 +543,12 @@
             const json = await resp.json();
             dadosFundos = json.fundos || [];
             console.log(`📊 ${dadosFundos.length} fundos`);
-            atualizarTudo();
+            atualizarRanking();
+            atualizarKPIs();
         } catch (e) {
             console.warn('Erro:', e.message);
-            dadosFundos = [];
-            atualizarTudo();
+            document.getElementById('ranking-body').innerHTML =
+                '<tr><td colspan="6" class="empty">Nenhum fundo disponível</td></tr>';
         }
     }
 
@@ -416,19 +575,83 @@
         }).join('');
     }
 
-    function atualizarTudo() {
-        atualizarRanking();
-
+    function atualizarKPIs() {
         const total = dadosFundos.length;
         const rents = dadosFundos.map(f => f.RENTABILIDADE || 0).filter(v => v > 0);
         const prazos = dadosFundos.map(f => f.PRAZO_MEDIO || 0).filter(v => v > 0);
         const pdds = dadosFundos.map(f => f.PDD_PCT || 0).filter(v => v > 0);
 
         document.getElementById('kpi-total').textContent = total || '—';
-        document.getElementById('kpi-rent-media').textContent = rents.length > 0 ? (rents.reduce((a,b) => a+b, 0) / rents.length).toFixed(2) + '%' : '—';
-        document.getElementById('kpi-melhor').textContent = rents.length > 0 ? Math.max(...rents).toFixed(2) + '%' : '—';
-        document.getElementById('kpi-prazo').textContent = prazos.length > 0 ? Math.round(prazos.reduce((a,b) => a+b, 0) / prazos.length) : '—';
-        document.getElementById('kpi-pdd').textContent = pdds.length > 0 ? (pdds.reduce((a,b) => a+b, 0) / pdds.length).toFixed(2) + '%' : '—';
+        document.getElementById('kpi-rent-media').textContent = rents.length > 0
+            ? (rents.reduce((a,b) => a+b, 0) / rents.length).toFixed(2) + '%' : '—';
+        document.getElementById('kpi-melhor').textContent = rents.length > 0
+            ? Math.max(...rents).toFixed(2) + '%' : '—';
+        document.getElementById('kpi-prazo').textContent = prazos.length > 0
+            ? Math.round(prazos.reduce((a,b) => a+b, 0) / prazos.length) : '—';
+        document.getElementById('kpi-pdd').textContent = pdds.length > 0
+            ? (pdds.reduce((a,b) => a+b, 0) / pdds.length).toFixed(2) + '%' : '—';
+    }
+
+    function atualizarTop10() {
+        // Top 10 por PL
+        const plBody = document.getElementById('top10-pl-body');
+        const sortedPL = [...dadosFundos].sort((a, b) => (b.VL_PL || 0) - (a.VL_PL || 0)).slice(0, 10);
+        if (sortedPL.length === 0) {
+            plBody.innerHTML = '<tr><td colspan="3" class="empty">Nenhum dado</td></tr>';
+        } else {
+            plBody.innerHTML = sortedPL.map((f, i) => `<tr>
+                <td>${i + 1}</td>
+                <td>${f.DENOMINACAO_SOCIAL || f.CNPJ_FUNDO || '---'}</td>
+                <td class="num">${(f.VL_PL || 0).toFixed(2)}</td>
+            </tr>`).join('');
+        }
+
+        // Top 10 por Prazo Médio
+        const prazoBody = document.getElementById('top10-prazo-body');
+        const sortedPrazo = [...dadosFundos].sort((a, b) => (b.PRAZO_MEDIO || 0) - (a.PRAZO_MEDIO || 0)).slice(0, 10);
+        if (sortedPrazo.length === 0) {
+            prazoBody.innerHTML = '<tr><td colspan="3" class="empty">Nenhum dado</td></tr>';
+        } else {
+            prazoBody.innerHTML = sortedPrazo.map((f, i) => `<tr>
+                <td>${i + 1}</td>
+                <td>${f.DENOMINACAO_SOCIAL || f.CNPJ_FUNDO || '---'}</td>
+                <td class="num">${f.PRAZO_MEDIO || 0}</td>
+            </tr>`).join('');
+        }
+    }
+
+    function atualizarGovernanca() {
+        const div = document.getElementById('governanca-content');
+        if (!dadosFundos || dadosFundos.length === 0) {
+            div.innerHTML = '<p style="color:#94a3b8;">Nenhum fundo disponível para análise.</p>';
+            return;
+        }
+
+        const total = dadosFundos.length;
+        const pls = dadosFundos.map(f => f.VL_PL || 0).filter(v => v > 0);
+        const recompras = dadosFundos.map(f => f.RECOMPRA_PCT || 0).filter(v => v > 0);
+        const concSac = dadosFundos.map(f => f.CONC_TOP5_SACADOS || 0).filter(v => v > 0);
+
+        const plMedio = pls.length > 0 ? (pls.reduce((a,b) => a+b, 0) / pls.length) : 0;
+        const recompraMedia = recompras.length > 0 ? (recompras.reduce((a,b) => a+b, 0) / recompras.length) : 0;
+        const concMedia = concSac.length > 0 ? (concSac.reduce((a,b) => a+b, 0) / concSac.length) : 0;
+
+        div.innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+                <div style="background:#f8fafc;border-radius:8px;padding:16px;">
+                    <div style="font-size:11px;color:#64748b;">Fundos Analisados</div>
+                    <div style="font-size:22px;font-weight:700;">${total}</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:8px;padding:16px;">
+                    <div style="font-size:11px;color:#64748b;">PL Médio</div>
+                    <div style="font-size:22px;font-weight:700;">R$ ${plMedio.toFixed(2)} MM</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:8px;padding:16px;">
+                    <div style="font-size:11px;color:#64748b;">Recompra Média</div>
+                    <div style="font-size:22px;font-weight:700;">${recompraMedia.toFixed(2)}%</div>
+                </div>
+            </div>
+        `;
     }
 
     carregarDados();
