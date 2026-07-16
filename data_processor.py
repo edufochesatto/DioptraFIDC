@@ -1,316 +1,240 @@
 """
 Módulo de processamento e análise dos dados de FIDCs.
-Filtra por duplicatas/PME e calcula métricas de governança.
-
-ATUALIZADO: 15/07/2026 — Suporte ao novo schema da CVM (CNPJ_FUNDO_CLASSE)
+ATUALIZADO: 16/07/2026 — Novo schema CVM (TAB_IV substituiu TAB_I)
 """
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
-def _encontrar_coluna(df, *nomes_candidatos):
-    """
-    Procura uma coluna no DataFrame por vários nomes possíveis.
-    Retorna o nome real encontrado ou None.
-    """
-    for nome in nomes_candidatos:
+def _encontrar_coluna(df, *candidatos):
+    """Busca coluna por nome exato → case-insensitive → substring."""
+    for nome in candidatos:
         if nome in df.columns:
             return nome
         for col in df.columns:
             if col.strip().upper() == nome.upper():
                 return col
-    nome_upper = [n.upper() for n in nomes_candidatos]
+    upper = [n.upper() for n in candidatos]
     for col in df.columns:
-        col_upper = col.strip().upper()
-        for n in nome_upper:
-            if n in col_upper or col_upper in n:
+        cu = col.strip().upper()
+        for n in upper:
+            if n in cu or cu in n:
                 return col
     return None
 
-def carregar_tabela(data_dir, nome_arquivo, colunas=None):
+def carregar_tabela(data_dir, nome_exato):
+    """
+    Carrega CSV usando padrão exato _NOME_ para evitar
+    que 'tab_I' corresponda a 'tab_III'.
+    """
     data_dir = Path(data_dir)
-    arquivo = data_dir / nome_arquivo
-    if not arquivo.exists():
-        matches = list(data_dir.glob(f"*{nome_arquivo}*"))
-        if not matches:
-            raise FileNotFoundError(f"{nome_arquivo} não encontrado em {data_dir}")
-        arquivo = matches[0]
-    print(f"   [DEBUG] Carregando {arquivo.name}...")
-    df = pd.read_csv(arquivo, sep=';', encoding='latin1', decimal=',')
-    print(f"   [DEBUG] Colunas ({len(df.columns)}): {list(df.columns)}")
-    if colunas:
-        existentes = [c for c in colunas if c in df.columns]
-        if existentes:
-            df = df[existentes]
-    return df
+    # Padrão seguro: começa com 'inf_mensal_fidc_tab_' + nome + '_' + YYYYMM
+    matches = sorted(data_dir.glob(f"inf_mensal_fidc_tab_{nome_exato}_*.csv"))
+    if not matches:
+        # Fallback: qualquer .csv contendo o nome exato isolado
+        matches = sorted(data_dir.glob(f"*_tab_{nome_exato}_*.csv"))
+    if not matches:
+        return None
+    arquivo = matches[0]
+    print(f"   [LOAD] {arquivo.name}")
+    try:
+        df = pd.read_csv(arquivo, sep=';', encoding='latin1', decimal=',')
+        print(f"   [OK] {len(df)} linhas, {len(df.columns)} colunas")
+        return df
+    except Exception as e:
+        print(f"   [ERRO] {e}")
+        return None
 
 def tratar_numericos(df):
+    """Converte colunas numéricas para float."""
     for col in df.columns:
-        if col.startswith('VL_') or col.startswith('QT_') or col == 'PRAZO_MEDIO':
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        if df[col].dtype == object:
+            tentativa = pd.to_numeric(
+                df[col].astype(str)
+                .str.replace('.', '', regex=False)
+                .str.replace(',', '.', regex=False),
+                errors='coerce'
+            )
+            if tentativa.notna().sum() > 0:
+                df[col] = tentativa.fillna(0)
     return df
 
-def filtrar_duplicatas_pme(tab_i, tab_ii, tab_iii, tab_v, tab_vi, tab_vii, tab_ix):
-    # ── TAB I ──
-    col_cnpj = _encontrar_coluna(
-        tab_i,
-        'CNPJ_FUNDO', 'CNPJ_DO_FUNDO', 'CNPJ_FUNDO_',
-        'CNPJ_FUNDO_CLASSE', 'CNPJ_CLASSE',
-        'CD_CNPJ_FUNDO', 'CD_FUNDO'
-    )
-    if col_cnpj is None:
-        print(f"\n❌ CNPJ não encontrada. Colunas: {list(tab_i.columns)}")
-        raise KeyError("Coluna de identificação do fundo não encontrada na TAB_I")
-    print(f"   [DEBUG] CNPJ encontrada como: '{col_cnpj}'")
-    tab_i = tab_i.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-    tab_i = tratar_numericos(tab_i)
+def processar_duplicatas_pme(data_dir):
+    """
+    Pipeline completo adaptado ao novo schema CVM (Junho/2026+).
+    Retorna (df_completo, dict_metricas).
+    """
+    # ── 1. Fundos — TAB_IV ──
+    tab_iv = carregar_tabela(data_dir, "IV")
+    if tab_iv is None or tab_iv.empty:
+        raise FileNotFoundError("TAB_IV (fundos) não encontrada.")
 
-    col_classe = _encontrar_coluna(
-        tab_i, 'CLASSE', 'CLASSE_FUNDO', 'NM_CLASSE', 'DS_CLASSE', 'TP_CLASSE'
-    )
+    # Renomeia colunas do novo schema
+    rename_fundos = {
+        'CNPJ_FUNDO_CLASSE': 'CNPJ_FUNDO',
+        'DENOM_SOCIAL': 'DENOMINACAO_SOCIAL',
+        'TP_FUNDO_CLASSE': 'CLASSE',
+        'TAB_IV_A_VL_PL': 'VL_PL',
+    }
+    tab_iv = tab_iv.rename(columns={
+        k: v for k, v in rename_fundos.items() if k in tab_iv.columns
+    })
+
+    # Garante CNPJ_FUNDO
+    col_cnpj = _encontrar_coluna(tab_iv, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+    if col_cnpj and col_cnpj != 'CNPJ_FUNDO':
+        tab_iv = tab_iv.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
+    if 'CNPJ_FUNDO' not in tab_iv.columns:
+        raise KeyError("CNPJ não encontrado em nenhuma coluna da TAB_IV.")
+
+    tab_iv = tratar_numericos(tab_iv)
+    tab_iv['CNPJ_FUNDO'] = tab_iv['CNPJ_FUNDO'].astype(str).str.strip()
+
+    # Filtra Duplicatas/PME
+    col_classe = _encontrar_coluna(tab_iv, 'CLASSE', 'TP_FUNDO_CLASSE')
     if col_classe:
-        tab_i = tab_i.rename(columns={col_classe: 'CLASSE'})
-        mask = tab_i['CLASSE'].str.upper().str.contains('DUPLICATA|PME', na=False)
-        tab_i = tab_i[mask].copy()
+        if col_classe != 'CLASSE':
+            tab_iv = tab_iv.rename(columns={col_classe: 'CLASSE'})
+        # Mostra valores únicos de CLASSE para debug
+        print(f"   [DEBUG] Valores de CLASSE disponíveis: {tab_iv['CLASSE'].dropna().unique().tolist()}")
+        mask = tab_iv['CLASSE'].astype(str).str.upper().str.contains(
+            'DUPLICATA|PME|DUPLICATAS', na=False, regex=True
+        )
+        tab_iv = tab_iv[mask].copy()
+        print(f"   → {len(tab_iv)} fundos Duplicatas/PME encontrados")
     else:
-        print("   [AVISO] CLASSE não encontrada. Usando todos os fundos.")
+        print("   [AVISO] Coluna CLASSE não encontrada. Usando todos os fundos.")
 
-    tab_i['CNPJ_FUNDO'] = tab_i['CNPJ_FUNDO'].astype(str).str.strip()
+    if tab_iv.empty:
+        return tab_iv, {}
 
-    # ── TAB II — Sacados ──
-    col_cnpj = _encontrar_coluna(
-        tab_ii, 'CNPJ_FUNDO', 'CNPJ_DO_FUNDO', 'CNPJ_FUNDO_',
-        'CNPJ_FUNDO_CLASSE', 'CD_CNPJ_FUNDO'
-    )
-    if col_cnpj:
-        tab_ii = tab_ii.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-    tab_ii = tratar_numericos(tab_ii)
-    tab_ii['CNPJ_FUNDO'] = tab_ii['CNPJ_FUNDO'].astype(str).str.strip()
+    df = tab_iv[['CNPJ_FUNDO']].copy()
 
-    col_sac = _encontrar_coluna(
-        tab_ii, 'CNPJ_SACADO', 'CNPJ_CPF_SACADO', 'CD_SACADO', 'CNPJ_DO_SACADO'
-    )
-    if col_sac:
-        tab_ii = tab_ii.rename(columns={col_sac: 'CNPJ_SACADO'})
-    col_vl = _encontrar_coluna(
-        tab_ii, 'VL_ATIVO', 'VL_ATIVO_FINANCEIRO', 'VL_DIREITO_CREDITORIO',
-        'VL_ATIVO_CARTEIRA', 'VL_CARTEIRA'
-    )
-    if col_vl:
-        tab_ii = tab_ii.rename(columns={col_vl: 'VL_ATIVO'})
+    # ── 2. Prazo Médio — TAB_VI ──
+    tab_vi = carregar_tabela(data_dir, "VI")
+    prazo_df = None
+    if tab_vi is not None and not tab_vi.empty:
+        col_cnpj_vi = _encontrar_coluna(tab_vi, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+        if col_cnpj_vi:
+            if col_cnpj_vi != 'CNPJ_FUNDO':
+                tab_vi = tab_vi.rename(columns={col_cnpj_vi: 'CNPJ_FUNDO'})
+            tab_vi['CNPJ_FUNDO'] = tab_vi['CNPJ_FUNDO'].astype(str).str.strip()
+            tab_vi = tratar_numericos(tab_vi)
 
-    if 'CNPJ_SACADO' in tab_ii.columns and 'VL_ATIVO' in tab_ii.columns:
-        tab_ii['VL_ATIVO'] = pd.to_numeric(tab_ii['VL_ATIVO'], errors='coerce').fillna(0)
-        conc_sac = tab_ii.groupby('CNPJ_FUNDO').agg(
-            NUM_SACADOS=('CNPJ_SACADO', 'nunique'),
-            CONC_TOP5_SACADOS=('VL_ATIVO', lambda x: round(
-                x.nlargest(5).sum() / x.sum() * 100, 2) if x.sum() > 0 else 0)
-        ).reset_index()
-    else:
-        print("   [AVISO] TAB_II sem dados. Pulando sacados.")
-        conc_sac = pd.DataFrame({'CNPJ_FUNDO': tab_i['CNPJ_FUNDO'].unique()})
+            # Calcula prazo médio ponderado das faixas de vencimento
+            dias_por_coluna = {
+                'TAB_VI_A1_VL_PRAZO_VENC_30': 15,
+                'TAB_VI_A2_VL_PRAZO_VENC_60': 45,
+                'TAB_VI_A3_VL_PRAZO_VENC_90': 75,
+                'TAB_VI_A4_VL_PRAZO_VENC_120': 105,
+                'TAB_VI_A5_VL_PRAZO_VENC_150': 135,
+                'TAB_VI_A6_VL_PRAZO_VENC_180': 165,
+                'TAB_VI_A7_VL_PRAZO_VENC_360': 270,
+                'TAB_VI_A8_VL_PRAZO_VENC_720': 540,
+                'TAB_VI_A9_VL_PRAZO_VENC_1080': 900,
+                'TAB_VI_A10_VL_PRAZO_VENC_MAIOR_1080': 1200,
+            }
+            resultados = []
+            for cnpj, grupo in tab_vi.groupby('CNPJ_FUNDO'):
+                sp = 0.0
+                peso = 0.0
+                for col, dias in dias_por_coluna.items():
+                    if col in grupo.columns:
+                        v = pd.to_numeric(grupo[col], errors='coerce').sum()
+                        if v > 0:
+                            sp += v * dias
+                            peso += v
+                prazo = round(sp / peso, 1) if peso > 0 else 0
+                resultados.append({'CNPJ_FUNDO': cnpj, 'PRAZO_MEDIO': prazo})
+            prazo_df = pd.DataFrame(resultados)
 
-    # ── TAB III — Recompra ──
-    col_cnpj = _encontrar_coluna(
-        tab_iii, 'CNPJ_FUNDO', 'CNPJ_DO_FUNDO', 'CNPJ_FUNDO_',
-        'CNPJ_FUNDO_CLASSE', 'CD_CNPJ_FUNDO'
-    )
-    if col_cnpj:
-        tab_iii = tab_iii.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-    tab_iii = tratar_numericos(tab_iii)
-    tab_iii['CNPJ_FUNDO'] = tab_iii['CNPJ_FUNDO'].astype(str).str.strip()
+    # ── 3. Recompra e Cedentes — TAB_VII ──
+    tab_vii = carregar_tabela(data_dir, "VII")
+    recompra_df = None
+    cedentes_df = None
+    if tab_vii is not None and not tab_vii.empty:
+        col_cnpj_vii = _encontrar_coluna(tab_vii, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+        if col_cnpj_vii:
+            if col_cnpj_vii != 'CNPJ_FUNDO':
+                tab_vii = tab_vii.rename(columns={col_cnpj_vii: 'CNPJ_FUNDO'})
+            tab_vii['CNPJ_FUNDO'] = tab_vii['CNPJ_FUNDO'].astype(str).str.strip()
+            tab_vii = tratar_numericos(tab_vii)
 
-    col_rec = _encontrar_coluna(
-        tab_iii, 'VL_DICRED_ALIEN_CONTAB', 'VL_DICRED_ALIEN', 'VL_RECOMPRA',
-        'VL_DIREITO_CREDITORIO_ALIENADO', 'VL_CREDITO_ALIENADO'
-    )
-    if col_rec:
-        tab_iii = tab_iii.rename(columns={col_rec: 'VL_DICRED_ALIEN_CONTAB'})
+            # Recompra
+            col_rec = _encontrar_coluna(
+                tab_vii, 'TAB_VII_D_2_VL_RECOMPRA', 'TAB_VII_D_3_VL_CONTAB_RECOMPRA'
+            )
+            if col_rec:
+                recompra_df = tab_vii.groupby('CNPJ_FUNDO').agg(
+                    INDICE_RECOMPRA=(col_rec, 'sum')
+                ).reset_index()
 
-    if 'VL_DICRED_ALIEN_CONTAB' in tab_iii.columns:
-        tab_iii['VL_DICRED_ALIEN_CONTAB'] = pd.to_numeric(
-            tab_iii['VL_DICRED_ALIEN_CONTAB'], errors='coerce').fillna(0)
-        recompra = tab_iii.groupby('CNPJ_FUNDO').agg(
-            INDICE_RECOMPRA=('VL_DICRED_ALIEN_CONTAB', 'sum')
-        ).reset_index()
-    else:
-        print("   [AVISO] TAB_III sem recompra. Pulando.")
-        recompra = pd.DataFrame({'CNPJ_FUNDO': tab_i['CNPJ_FUNDO'].unique()})
+            # Cedentes (quantidade)
+            col_qt_ced = _encontrar_coluna(tab_vii, 'TAB_VII_B1_1_QT_CEDENTE')
+            if col_qt_ced:
+                cedentes_df = tab_vii.groupby('CNPJ_FUNDO').agg(
+                    NUM_CEDENTES=(col_qt_ced, 'sum')
+                ).reset_index()
 
-    # ── TAB V — PDD ──
-    col_cnpj = _encontrar_coluna(
-        tab_v, 'CNPJ_FUNDO', 'CNPJ_DO_FUNDO', 'CNPJ_FUNDO_',
-        'CNPJ_FUNDO_CLASSE', 'CD_CNPJ_FUNDO'
-    )
-    if col_cnpj:
-        tab_v = tab_v.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-    tab_v = tratar_numericos(tab_v)
-    tab_v['CNPJ_FUNDO'] = tab_v['CNPJ_FUNDO'].astype(str).str.strip()
+    # ── 4. PDD — TAB_V ──
+    tab_v = carregar_tabela(data_dir, "V")
+    pdd_df = None
+    if tab_v is not None and not tab_v.empty:
+        col_cnpj_v = _encontrar_coluna(tab_v, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+        if col_cnpj_v:
+            if col_cnpj_v != 'CNPJ_FUNDO':
+                tab_v = tab_v.rename(columns={col_cnpj_v: 'CNPJ_FUNDO'})
+            tab_v['CNPJ_FUNDO'] = tab_v['CNPJ_FUNDO'].astype(str).str.strip()
+            tab_v = tratar_numericos(tab_v)
+            col_pdd = _encontrar_coluna(tab_v, 'VL_PDD', 'VL_PROVISAO')
+            if col_pdd:
+                pdd_df = tab_v.groupby('CNPJ_FUNDO').agg(PDD=(col_pdd, 'sum')).reset_index()
 
-    col_pdd = _encontrar_coluna(
-        tab_v, 'VL_PDD', 'VL_PROVISAO', 'VL_PDD_CONTABIL',
-        'VL_PROVISAO_PDD', 'VL_PROVISAO_DEVEDORES_DUVIDOSOS'
-    )
-    if col_pdd:
-        tab_v = tab_v.rename(columns={col_pdd: 'PDD'})
-
-    col_pdd_val = 'PDD' if col_pdd else ('VL_PDD' if 'VL_PDD' in tab_v.columns else None)
-    if col_pdd_val:
-        tab_v[col_pdd_val] = pd.to_numeric(tab_v[col_pdd_val], errors='coerce').fillna(0)
-        pdd = tab_v.groupby('CNPJ_FUNDO').agg(PDD=(col_pdd_val, 'sum')).reset_index()
-    else:
-        print("   [AVISO] TAB_V sem PDD. Pulando.")
-        pdd = pd.DataFrame({'CNPJ_FUNDO': tab_i['CNPJ_FUNDO'].unique()})
-
-    # ── TAB VI — Prazo Médio ──
-    col_cnpj = _encontrar_coluna(
-        tab_vi, 'CNPJ_FUNDO', 'CNPJ_DO_FUNDO', 'CNPJ_FUNDO_',
-        'CNPJ_FUNDO_CLASSE', 'CD_CNPJ_FUNDO'
-    )
-    if col_cnpj:
-        tab_vi = tab_vi.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-    tab_vi = tratar_numericos(tab_vi)
-    tab_vi['CNPJ_FUNDO'] = tab_vi['CNPJ_FUNDO'].astype(str).str.strip()
-
-    col_prazo = _encontrar_coluna(
-        tab_vi, 'PRAZO_MEDIO', 'PRAZO_MEDIO_DIAS', 'PRAZO',
-        'PRAZO_MEDIO_CARTEIRA', 'PRAZO_MEDIO_DIAS_CORRIDOS'
-    )
-    if col_prazo:
-        tab_vi = tab_vi.rename(columns={col_prazo: 'PRAZO_MEDIO'})
-
-    if 'PRAZO_MEDIO' in tab_vi.columns:
-        tab_vi['PRAZO_MEDIO'] = pd.to_numeric(tab_vi['PRAZO_MEDIO'], errors='coerce').fillna(0)
-        prazo = tab_vi.groupby('CNPJ_FUNDO').agg(PRAZO_MEDIO=('PRAZO_MEDIO', 'mean')).reset_index()
-    else:
-        print("   [AVISO] TAB_VI sem prazo médio. Pulando.")
-        prazo = pd.DataFrame({'CNPJ_FUNDO': tab_i['CNPJ_FUNDO'].unique()})
-
-    # ── TAB VII — Liquidez ──
-    col_cnpj = _encontrar_coluna(
-        tab_vii, 'CNPJ_FUNDO', 'CNPJ_DO_FUNDO', 'CNPJ_FUNDO_',
-        'CNPJ_FUNDO_CLASSE', 'CD_CNPJ_FUNDO'
-    )
-    if col_cnpj:
-        tab_vii = tab_vii.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-    tab_vii = tratar_numericos(tab_vii)
-    tab_vii['CNPJ_FUNDO'] = tab_vii['CNPJ_FUNDO'].astype(str).str.strip()
-
-    col_liq = _encontrar_coluna(
-        tab_vii, 'VL_LIQ', 'VL_DISPONIBILIDADES', 'VL_CAIXA',
-        'VL_DISPONIVEL', 'VL_DISPONIBILIDADE'
-    )
-    if col_liq:
-        tab_vii = tab_vii.rename(columns={col_liq: 'VL_LIQ'})
-    col_tp = _encontrar_coluna(
-        tab_vii, 'VL_TIT_PUBLICO', 'VL_TITULOS_PUBLICOS', 'VL_TITULOS',
-        'VL_TITULO_PUBLICO', 'VL_APLICACAO_TITULOS'
-    )
-    if col_tp:
-        tab_vii = tab_vii.rename(columns={col_tp: 'VL_TIT_PUBLICO'})
-
-    agg_liq = {}
-    if 'VL_LIQ' in tab_vii.columns:
-        tab_vii['VL_LIQ'] = pd.to_numeric(tab_vii['VL_LIQ'], errors='coerce').fillna(0)
-        agg_liq['VL_LIQ'] = 'sum'
-    if 'VL_TIT_PUBLICO' in tab_vii.columns:
-        tab_vii['VL_TIT_PUBLICO'] = pd.to_numeric(tab_vii['VL_TIT_PUBLICO'], errors='coerce').fillna(0)
-        agg_liq['VL_TIT_PUBLICO'] = 'sum'
-    if agg_liq:
-        liq = tab_vii.groupby('CNPJ_FUNDO').agg(agg_liq).reset_index()
-    else:
-        print("   [AVISO] TAB_VII sem liquidez. Pulando.")
-        liq = pd.DataFrame({'CNPJ_FUNDO': tab_i['CNPJ_FUNDO'].unique()})
-
-    # ── TAB IX — Cedentes ──
-    col_cnpj = _encontrar_coluna(
-        tab_ix, 'CNPJ_FUNDO', 'CNPJ_DO_FUNDO', 'CNPJ_FUNDO_',
-        'CNPJ_FUNDO_CLASSE', 'CD_CNPJ_FUNDO'
-    )
-    if col_cnpj:
-        tab_ix = tab_ix.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-    tab_ix = tratar_numericos(tab_ix)
-    tab_ix['CNPJ_FUNDO'] = tab_ix['CNPJ_FUNDO'].astype(str).str.strip()
-
-    col_ced = _encontrar_coluna(
-        tab_ix, 'CNPJ_CEDENTE', 'CNPJ_CPF_CEDENTE', 'CD_CEDENTE',
-        'CNPJ_DO_CEDENTE', 'CNPJ_ORIGINADOR'
-    )
-    if col_ced:
-        tab_ix = tab_ix.rename(columns={col_ced: 'CNPJ_CEDENTE'})
-    col_vl_ix = _encontrar_coluna(
-        tab_ix, 'VL_ATIVO', 'VL_ATIVO_FINANCEIRO', 'VL_DIREITO_CREDITORIO',
-        'VL_ATIVO_CARTEIRA', 'VL_CARTEIRA'
-    )
-    if col_vl_ix:
-        tab_ix = tab_ix.rename(columns={col_vl_ix: 'VL_ATIVO'})
-
-    if 'CNPJ_CEDENTE' in tab_ix.columns and 'VL_ATIVO' in tab_ix.columns:
-        tab_ix['VL_ATIVO'] = pd.to_numeric(tab_ix['VL_ATIVO'], errors='coerce').fillna(0)
-        conc_ced = tab_ix.groupby('CNPJ_FUNDO').agg(
-            NUM_CEDENTES=('CNPJ_CEDENTE', 'nunique'),
-            CONC_TOP5_CEDENTES=('VL_ATIVO', lambda x: round(
-                x.nlargest(5).sum() / x.sum() * 100, 2) if x.sum() > 0 else 0)
-        ).reset_index()
-    else:
-        print("   [AVISO] TAB_IX sem cedentes. Pulando.")
-        conc_ced = pd.DataFrame({'CNPJ_FUNDO': tab_i['CNPJ_FUNDO'].unique()})
-
-    # ── MERGE ──
-    dfs = [tab_i, conc_sac, recompra, pdd, prazo, liq, conc_ced]
-    df = dfs[0]
-    for d in dfs[1:]:
-        if 'CNPJ_FUNDO' in d.columns:
-            df = df.merge(d, on='CNPJ_FUNDO', how='left')
+    # ── Merge ──
+    merges = [
+        ('PL', tab_iv[['CNPJ_FUNDO', 'VL_PL']] if 'VL_PL' in tab_iv.columns else None),
+        ('Prazo', prazo_df),
+        ('Recompra', recompra_df),
+        ('PDD', pdd_df),
+        ('Cedentes', cedentes_df),
+    ]
+    for nome, tbl in merges:
+        if tbl is not None and not tbl.empty:
+            cols = [c for c in tbl.columns if c != 'CNPJ_FUNDO']
+            if cols:
+                df = df.merge(tbl[['CNPJ_FUNDO'] + cols], on='CNPJ_FUNDO', how='left')
 
     # ── Métricas derivadas ──
-    if 'VL_TOTAL_ATIVO' in df.columns and 'VL_PL' in df.columns:
-        df['VL_TOTAL_ATIVO'] = pd.to_numeric(df['VL_TOTAL_ATIVO'], errors='coerce').fillna(0)
-        df['OVERCOLLATERALIZATION'] = round(
-            df['VL_TOTAL_ATIVO'] / df['VL_PL'].replace(0, np.nan), 2
-        )
-    else:
-        print("   [AVISO] OVERCOLLATERALIZATION não calculada (falta VL_TOTAL_ATIVO).")
+    if 'VL_PL' in df.columns:
+        df['VL_PL'] = pd.to_numeric(df['VL_PL'], errors='coerce').fillna(0)
+        if 'PDD' in df.columns:
+            df['PDD_PCT'] = round(
+                df['PDD'] / df['VL_PL'].replace(0, np.nan) * 100, 2
+            )
+        if 'INDICE_RECOMPRA' in df.columns:
+            df['RECOMPRA_PCT'] = round(
+                df['INDICE_RECOMPRA'] / df['VL_PL'].replace(0, np.nan) * 100, 2
+            )
 
-    if 'VL_LIQ' in df.columns and 'VL_PL' in df.columns:
-        df['PCT_LIQUIDEZ'] = round(
-            df['VL_LIQ'] / df['VL_PL'].replace(0, np.nan) * 100, 2
-        )
+    # Métricas de governança
+    metricas = {}
+    cols_metricas = {
+        'VL_PL': 'PL', 'PRAZO_MEDIO': 'Prazo Médio',
+        'PDD_PCT': 'PDD %PL', 'RECOMPRA_PCT': 'Recompra %PL',
+        'NUM_CEDENTES': 'Nº Cedentes',
+    }
+    for col, nome in cols_metricas.items():
+        if col in df.columns and df[col].notna().sum() > 0:
+            v = df[col].dropna()
+            if len(v) > 0:
+                metricas[col] = {
+                    'media': round(v.mean(), 2),
+                    'mediana': round(v.median(), 2),
+                    'desvio_padrao': round(v.std(), 2),
+                    'min': round(v.min(), 2),
+                    'max': round(v.max(), 2),
+                    'p25': round(v.quantile(0.25), 2),
+                    'p75': round(v.quantile(0.75), 2),
+                }
 
-    if 'PDD' in df.columns and 'VL_PL' in df.columns:
-        df['PDD_PCT'] = round(
-            df['PDD'] / df['VL_PL'].replace(0, np.nan) * 100, 2
-        )
-    elif 'VL_PDD' in df.columns and 'VL_PL' in df.columns:
-        df['VL_PDD'] = pd.to_numeric(df['VL_PDD'], errors='coerce').fillna(0)
-        df['PDD_PCT'] = round(
-            df['VL_PDD'] / df['VL_PL'].replace(0, np.nan) * 100, 2
-        )
-
-    if 'INDICE_RECOMPRA' in df.columns and 'VL_PL' in df.columns:
-        df['RECOMPRA_PCT'] = round(
-            df['INDICE_RECOMPRA'] / df['VL_PL'].replace(0, np.nan) * 100, 2
-        )
-
-    return df
-
-def calcular_metricas_governanca(df):
-    colunas = ['VL_PL', 'PRAZO_MEDIO', 'PDD_PCT', 'RECOMPRA_PCT',
-               'CONC_TOP5_SACADOS', 'CONC_TOP5_CEDENTES', 'NUM_SACADOS',
-               'NUM_CEDENTES', 'OVERCOLLATERALIZATION', 'PCT_LIQUIDEZ']
-    validas = [c for c in colunas if c in df.columns]
-    resumo = {}
-    for col in validas:
-        v = df[col].dropna()
-        if len(v) == 0:
-            continue
-        resumo[col] = {
-            'media': round(v.mean(), 2),
-            'mediana': round(v.median(), 2),
-            'desvio_padrao': round(v.std(), 2),
-            'min': round(v.min(), 2),
-            'max': round(v.max(), 2),
-            'p25': round(v.quantile(0.25), 2),
-            'p75': round(v.quantile(0.75), 2),
-        }
-    return resumo
+    return df, metricas
