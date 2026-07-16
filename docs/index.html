@@ -119,7 +119,7 @@
         }
         .benchmark-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 16px;
             margin-bottom: 20px;
         }
@@ -269,7 +269,6 @@
     <nav class="sidebar-nav">
         <a href="#" class="active"><span class="icon">📊</span> Ranking</a>
         <a href="#"><span class="icon">🏆</span> Top 10</a>
-        <a href="#"><span class="icon">📈</span> CDI vs IMAB</a>
         <a href="#"><span class="icon">🛡️</span> Governança</a>
         <a href="#"><span class="icon">📖</span> Glossário</a>
         <a href="#"><span class="icon">ℹ️</span> Sobre</a>
@@ -300,11 +299,6 @@
         <div class="benchmark-card">
             <div class="label">CDI</div>
             <div class="value">10,50%</div>
-            <div class="change change-up">▲ a.a.</div>
-        </div>
-        <div class="benchmark-card">
-            <div class="label">IMAB 5+</div>
-            <div class="value">11,80%</div>
             <div class="change change-up">▲ a.a.</div>
         </div>
         <div class="benchmark-card">
@@ -350,7 +344,6 @@
     <div class="tab-bar">
         <button class="active">Ranking</button>
         <button>Top 10</button>
-        <button>CDI vs IMAB</button>
         <button>Governança</button>
         <button>Glossário</button>
         <button>Sobre</button>
@@ -392,9 +385,8 @@
                 const b = await respB.json();
                 const cards = document.querySelectorAll('.benchmark-card');
                 if (b.cdi && cards[0]) cards[0].querySelector('.value').textContent = b.cdi.valor.toFixed(2).replace('.', ',') + '%';
-                if (b.imab && cards[1]) cards[1].querySelector('.value').textContent = b.imab.valor.toFixed(2).replace('.', ',') + '%';
-                if (b.ipca && cards[2]) cards[2].querySelector('.value').textContent = b.ipca.valor.toFixed(2).replace('.', ',') + '%';
-                if (b.ibovespa && cards[3]) cards[3].querySelector('.value').textContent = b.ibovespa.valor.toLocaleString('pt-BR');
+                if (b.ipca && cards[1]) cards[1].querySelector('.value').textContent = b.ipca.valor.toFixed(2).replace('.', ',') + '%';
+                if (b.ibovespa && cards[2]) cards[2].querySelector('.value').textContent = b.ibovespa.valor.toLocaleString('pt-BR');
                 console.log('✅ Benchmarks ao vivo carregados');
             }
 
