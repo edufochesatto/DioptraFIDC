@@ -1,0 +1,10 @@
+DioptraFIDC/
+├── data/
+│   └── raw/
+│       ├── inf_mensal_fidc_tab_I_202506  ← principal
+│       ├── inf_mensal_fidc_tab_II_202506
+│       ├── inf_mensal_fidc_tab_III_202506
+│       └── ... (os outros)
+├── scripts/
+├── docs/
+└── main.py
