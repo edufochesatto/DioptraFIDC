@@ -2,67 +2,55 @@
 Dioptra FIDC — Orquestrador principal.
 Baixa dados da CVM, processa, filtra e gera o dashboard.
 """
-import argparse
 import sys
 from pathlib import Path
-from cvm_downloader import obter_dados_recentes, baixar_zip, baixar_historico
-from data_processor import carregar_tabela, filtrar_duplicatas_pme, calcular_metricas_governanca
+from cvm_downloader import obter_dados_recentes
+from data_processor import processar_duplicatas_pme
 from dashboard_generator import gerar_dashboard
 
 DATA_DIR = Path("./dados_cvm")
 OUTPUT_DIR = Path("./output")
-OUTPUT_FILE = OUTPUT_DIR / "Dioptra_FIDC_Julho2026.xlsx"
+OUTPUT_FILE = OUTPUT_DIR / "Dioptra_FIDC.xlsx"
 
 def main():
-    parser = argparse.ArgumentParser(description="Dioptra FIDC — Dashboard de FIDCs")
-    parser.add_argument("--mes", type=str, help="Competência YYYYMM (ex: 202605)")
-    parser.add_argument("--historico", type=str, help="Ano histórico YYYY (ex: 2024)")
-    args = parser.parse_args()
-
     print("=" * 60)
     print("DIOPTRA FIDC")
     print("=" * 60)
 
+    # 1. Download
+    print("\n[1/4] Baixando dados mais recentes da CVM...")
     try:
-        if args.mes:
-            print(f"\n[1/4] Baixando {args.mes}...")
-            baixar_zip(args.mes, DATA_DIR)
-        elif args.historico:
-            print(f"\n[1/4] Baixando histórico {args.historico}...")
-            baixar_historico(args.historico, DATA_DIR)
-        else:
-            print("\n[1/4] Baixando dados mais recentes da CVM...")
-            obter_dados_recentes(DATA_DIR, meses=1)
+        obter_dados_recentes(DATA_DIR, meses=1)
     except Exception as e:
-        print(f"[ERRO] Falha ao baixar: {e}")
+        print(f"[ERRO] Download: {e}")
         sys.exit(1)
 
-    print("\n[2/4] Carregando tabelas...")
+    # 2. Listar arquivos baixados
+    print("\n[2/4] Arquivos disponíveis:")
+    for f in sorted(DATA_DIR.glob("*.csv")):
+        print(f"   {f.name}")
+
+    # 3. Processar
+    print("\n[3/4] Processando dados...")
     try:
-        tab_i = carregar_tabela(DATA_DIR, "tab_I")
-        tab_ii = carregar_tabela(DATA_DIR, "tab_II")
-        tab_iii = carregar_tabela(DATA_DIR, "tab_III")
-        tab_v = carregar_tabela(DATA_DIR, "tab_V")
-        tab_vi = carregar_tabela(DATA_DIR, "tab_VI")
-        tab_vii = carregar_tabela(DATA_DIR, "tab_VII")
-        tab_ix = carregar_tabela(DATA_DIR, "tab_IX")
-    except FileNotFoundError as e:
-        print(f"[ERRO] {e}")
+        df, metricas = processar_duplicatas_pme(DATA_DIR)
+    except Exception as e:
+        print(f"[ERRO] Processamento: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
-    print("[3/4] Filtrando Duplicatas/PME...")
-    df = filtrar_duplicatas_pme(tab_i, tab_ii, tab_iii, tab_v, tab_vi, tab_vii, tab_ix)
-    if len(df) == 0:
-        print("[AVISO] Nenhum fundo de Duplicatas/PME encontrado.")
-        if 'CLASSE' in tab_i.columns:
-            print("Classes disponíveis:")
-            print(tab_i['CLASSE'].value_counts().to_string())
+    if df.empty:
+        print("[AVISO] Nenhum fundo Duplicatas/PME encontrado.")
+        print("Verifique se a coluna CLASSE contém 'Duplicata' ou 'PME'.")
         sys.exit(1)
-    print(f"   → {len(df)} fundos encontrados.")
-    metricas = calcular_metricas_governanca(df)
 
+    print(f"\n   → {len(df)} fundos processados.")
+    print(f"   → {len(metricas)} métricas calculadas.")
+
+    # 4. Dashboard
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"\n[4/4] Gerando dashboard...")
+    print("\n[4/4] Gerando dashboard...")
     gerar_dashboard(df, metricas, OUTPUT_FILE)
 
     print(f"\n✅ Concluído! {len(df)} fundos analisados.")
