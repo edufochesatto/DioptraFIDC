@@ -33,6 +33,9 @@ jobs:
       - name: Run Dioptra FIDC
         run: python main.py
 
+      - name: Buscar benchmarks em tempo real
+        run: python scripts/buscar_benchmarks.py
+
       - name: Gerar dados.json para o site
         run: python scripts/gerar_dados_json.py
 
