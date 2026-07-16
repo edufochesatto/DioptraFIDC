@@ -1,9 +1,10 @@
 """
-data_processor.py — v3.0
-Adaptado ao schema CVM 202606 (TAB_IV sem coluna de classificação)
+data_processor.py — v4.0
+Conversão numérica robusta para o schema CVM 202606.
 """
 import pandas as pd
 import numpy as np
+import re
 from pathlib import Path
 
 def _encontrar_coluna(df, *candidatos):
@@ -21,6 +22,43 @@ def _encontrar_coluna(df, *candidatos):
             if n in cu or cu in n:
                 return col
     return None
+
+def _limpar_numero(valor):
+    """Converte string no formato brasileiro/extenso para float."""
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    try:
+        s = str(valor).strip()
+        if not s or s == 'nan':
+            return 0.0
+        # Remove R$, espaços, pontos de milhar, substitui vírgula decimal por ponto
+        s = s.replace('R$', '').replace('$', '').replace(' ', '')
+        s = s.replace('.', '').replace(',', '.')
+        # Remove qualquer caractere não-numérico exceto ponto e sinal negativo
+        s = re.sub(r'[^\d.-]', '', s)
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
+
+def _converter_coluna_numerica(df, coluna):
+    """Converte uma coluna para numérico, tratando formato brasileiro."""
+    if coluna not in df.columns:
+        return df
+    df[coluna] = df[coluna].apply(_limpar_numero)
+    return df
+
+def tratar_numericos(df):
+    """Converte TODAS as colunas VL_, QT_ e numéricas para float."""
+    for col in df.columns:
+        # Tenta converter qualquer coluna que pareça numérica
+        if col.startswith('VL_') or col.startswith('QT_') or col.startswith('TAB_'):
+            df = _converter_coluna_numerica(df, col)
+        elif df[col].dtype == object:
+            # Tenta converter colunas object que contenham números
+            amostra = df[col].dropna().head(20).astype(str).str.cat(sep=' ')
+            if re.search(r'[\d,.]', amostra):
+                df = _converter_coluna_numerica(df, col)
+    return df
 
 def carregar_tabela(data_dir, nome_exato):
     """Carrega CSV usando padrão exato _NOME_."""
@@ -40,46 +78,26 @@ def carregar_tabela(data_dir, nome_exato):
         print(f"   [ERRO] {e}")
         return None
 
-def tratar_numericos(df):
-    """Converte colunas para float."""
-    for col in df.columns:
-        if df[col].dtype == object:
-            tentativa = pd.to_numeric(
-                df[col].astype(str)
-                .str.replace('.', '', regex=False)
-                .str.replace(',', '.', regex=False),
-                errors='coerce'
-            )
-            if tentativa.notna().sum() > 0:
-                df[col] = tentativa.fillna(0)
-    return df
-
 def processar_duplicatas_pme(data_dir):
     """
-    Pipeline completo adaptado ao schema CVM 202606.
-    OBS: A TAB_IV não tem mais coluna de classificação (CLASSE).
-    Processamos todos os fundos disponíveis.
+    Pipeline completo — schema CVM 202606.
     """
     # ── 1. Fundos — TAB_IV ──
     tab_iv = carregar_tabela(data_dir, "IV")
     if tab_iv is None or tab_iv.empty:
-        raise FileNotFoundError("TAB_IV (fundos) não encontrada.")
+        raise FileNotFoundError("TAB_IV não encontrada.")
 
-    # Mostra valores únicos de TP_FUNDO_CLASSE para debug
+    # Debug
     if 'TP_FUNDO_CLASSE' in tab_iv.columns:
         valores = tab_iv['TP_FUNDO_CLASSE'].dropna().unique().tolist()
         print(f"   [DEBUG] TP_FUNDO_CLASSE: {valores}")
 
-    # Filtra apenas linhas com TP_FUNDO_CLASSE = 'Fundo' (dados individuais)
-    # e descarta linhas agregadas 'Classe'
+    # Filtra apenas linhas de fundo individual
     if 'TP_FUNDO_CLASSE' in tab_iv.columns:
         tab_iv = tab_iv[tab_iv['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
-        print(f"   → {len(tab_iv)} fundos individuais (excluindo agregados 'Classe')")
-    else:
-        print("   [AVISO] Coluna TP_FUNDO_CLASSE não encontrada. Usando todos.")
+        print(f"   → {len(tab_iv)} fundos individuais")
 
     if tab_iv.empty:
-        print("   [AVISO] Nenhum fundo individual encontrado.")
         return tab_iv, {}
 
     # Renomeia colunas
@@ -107,17 +125,16 @@ def processar_duplicatas_pme(data_dir):
     tab_vi = carregar_tabela(data_dir, "VI")
     prazo_df = None
     if tab_vi is not None and not tab_vi.empty:
-        col_cnpj_vi = _encontrar_coluna(tab_vi, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
-        if col_cnpj_vi:
-            if col_cnpj_vi != 'CNPJ_FUNDO':
-                tab_vi = tab_vi.rename(columns={col_cnpj_vi: 'CNPJ_FUNDO'})
+        col_cnpj = _encontrar_coluna(tab_vi, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+        if col_cnpj:
+            if col_cnpj != 'CNPJ_FUNDO':
+                tab_vi = tab_vi.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
             tab_vi['CNPJ_FUNDO'] = tab_vi['CNPJ_FUNDO'].astype(str).str.strip()
-            tab_vi = tratar_numericos(tab_vi)
-
-            # Filtra apenas linhas de fundo individual
             if 'TP_FUNDO_CLASSE' in tab_vi.columns:
                 tab_vi = tab_vi[tab_vi['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+            tab_vi = tratar_numericos(tab_vi)
 
+            # Calcula prazo médio ponderado
             dias_por_coluna = {
                 'TAB_VI_A1_VL_PRAZO_VENC_30': 15,
                 'TAB_VI_A2_VL_PRAZO_VENC_60': 45,
@@ -132,68 +149,70 @@ def processar_duplicatas_pme(data_dir):
             }
             resultados = []
             for cnpj, grupo in tab_vi.groupby('CNPJ_FUNDO'):
-                sp = 0.0
-                peso = 0.0
+                sp = 0.0; peso = 0.0
                 for col, dias in dias_por_coluna.items():
                     if col in grupo.columns:
                         v = pd.to_numeric(grupo[col], errors='coerce').sum()
                         if v > 0:
-                            sp += v * dias
-                            peso += v
+                            sp += v * dias; peso += v
                 prazo = round(sp / peso, 1) if peso > 0 else 0
                 resultados.append({'CNPJ_FUNDO': cnpj, 'PRAZO_MEDIO': prazo})
             prazo_df = pd.DataFrame(resultados)
 
     # ── 3. Recompra e Cedentes — TAB_VII ──
     tab_vii = carregar_tabela(data_dir, "VII")
-    recompra_df = None
-    cedentes_df = None
+    recompra_df = None; cedentes_df = None
     if tab_vii is not None and not tab_vii.empty:
-        col_cnpj_vii = _encontrar_coluna(tab_vii, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
-        if col_cnpj_vii:
-            if col_cnpj_vii != 'CNPJ_FUNDO':
-                tab_vii = tab_vii.rename(columns={col_cnpj_vii: 'CNPJ_FUNDO'})
+        col_cnpj = _encontrar_coluna(tab_vii, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+        if col_cnpj:
+            if col_cnpj != 'CNPJ_FUNDO':
+                tab_vii = tab_vii.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
             tab_vii['CNPJ_FUNDO'] = tab_vii['CNPJ_FUNDO'].astype(str).str.strip()
-            tab_vii = tratar_numericos(tab_vii)
-
-            # Filtra apenas fundos individuais
             if 'TP_FUNDO_CLASSE' in tab_vii.columns:
                 tab_vii = tab_vii[tab_vii['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+            tab_vii = tratar_numericos(tab_vii)
 
             col_rec = _encontrar_coluna(tab_vii, 'TAB_VII_D_2_VL_RECOMPRA', 'TAB_VII_D_3_VL_CONTAB_RECOMPRA')
             if col_rec:
+                tab_vii[col_rec] = pd.to_numeric(tab_vii[col_rec], errors='coerce').fillna(0)
                 recompra_df = tab_vii.groupby('CNPJ_FUNDO').agg(
                     INDICE_RECOMPRA=(col_rec, 'sum')
                 ).reset_index()
 
             col_qt_ced = _encontrar_coluna(tab_vii, 'TAB_VII_B1_1_QT_CEDENTE')
             if col_qt_ced:
+                tab_vii[col_qt_ced] = pd.to_numeric(tab_vii[col_qt_ced], errors='coerce').fillna(0)
                 cedentes_df = tab_vii.groupby('CNPJ_FUNDO').agg(
                     NUM_CEDENTES=(col_qt_ced, 'sum')
                 ).reset_index()
 
     # ── 4. PDD — TAB_V ──
+    # NOTA: No novo schema CVM, TAB_V pode não ter dados de PDD.
+    # Apenas processa se encontrar a coluna.
     tab_v = carregar_tabela(data_dir, "V")
     pdd_df = None
     if tab_v is not None and not tab_v.empty:
-        col_cnpj_v = _encontrar_coluna(tab_v, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
-        if col_cnpj_v:
-            if col_cnpj_v != 'CNPJ_FUNDO':
-                tab_v = tab_v.rename(columns={col_cnpj_v: 'CNPJ_FUNDO'})
+        col_cnpj = _encontrar_coluna(tab_v, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+        if col_cnpj:
+            if col_cnpj != 'CNPJ_FUNDO':
+                tab_v = tab_v.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
             tab_v['CNPJ_FUNDO'] = tab_v['CNPJ_FUNDO'].astype(str).str.strip()
-            tab_v = tratar_numericos(tab_v)
-
-            # Filtra apenas fundos individuais
             if 'TP_FUNDO_CLASSE' in tab_v.columns:
                 tab_v = tab_v[tab_v['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+            tab_v = tratar_numericos(tab_v)
 
-            col_pdd = _encontrar_coluna(tab_v, 'VL_PDD', 'VL_PROVISAO')
+            col_pdd = _encontrar_coluna(tab_v, 'VL_PDD', 'VL_PROVISAO', 'PDD')
             if col_pdd:
+                tab_v[col_pdd] = pd.to_numeric(tab_v[col_pdd], errors='coerce').fillna(0)
                 pdd_df = tab_v.groupby('CNPJ_FUNDO').agg(PDD=(col_pdd, 'sum')).reset_index()
 
     # ── Merge ──
+    # Garante que VL_PL está no df
+    if 'VL_PL' in tab_iv.columns:
+        tab_iv['VL_PL'] = pd.to_numeric(tab_iv['VL_PL'], errors='coerce').fillna(0)
+        df = df.merge(tab_iv[['CNPJ_FUNDO', 'VL_PL']], on='CNPJ_FUNDO', how='left')
+
     merges = [
-        ('PL', tab_iv[['CNPJ_FUNDO', 'VL_PL']] if 'VL_PL' in tab_iv.columns and not tab_iv.empty else None),
         ('Prazo', prazo_df),
         ('Recompra', recompra_df),
         ('PDD', pdd_df),
@@ -203,15 +222,33 @@ def processar_duplicatas_pme(data_dir):
         if tbl is not None and not tbl.empty:
             cols = [c for c in tbl.columns if c != 'CNPJ_FUNDO']
             if cols:
+                # Garante que colunas numéricas são float
+                for c in cols:
+                    tbl[c] = pd.to_numeric(tbl[c], errors='coerce').fillna(0)
                 df = df.merge(tbl[['CNPJ_FUNDO'] + cols], on='CNPJ_FUNDO', how='left')
 
     # ── Métricas derivadas ──
+    # Garante que VL_PL é numérico
     if 'VL_PL' in df.columns:
         df['VL_PL'] = pd.to_numeric(df['VL_PL'], errors='coerce').fillna(0)
+
         if 'PDD' in df.columns:
-            df['PDD_PCT'] = round(df['PDD'] / df['VL_PL'].replace(0, np.nan) * 100, 2)
+            df['PDD'] = pd.to_numeric(df['PDD'], errors='coerce').fillna(0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                df['PDD_PCT'] = round(
+                    df['PDD'] / df['VL_PL'].replace(0, np.nan) * 100, 2
+                )
+            df['PDD_PCT'] = df['PDD_PCT'].fillna(0).replace([np.inf, -np.inf], 0)
+
         if 'INDICE_RECOMPRA' in df.columns:
-            df['RECOMPRA_PCT'] = round(df['INDICE_RECOMPRA'] / df['VL_PL'].replace(0, np.nan) * 100, 2)
+            df['INDICE_RECOMPRA'] = pd.to_numeric(
+                df['INDICE_RECOMPRA'], errors='coerce'
+            ).fillna(0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                df['RECOMPRA_PCT'] = round(
+                    df['INDICE_RECOMPRA'] / df['VL_PL'].replace(0, np.nan) * 100, 2
+                )
+            df['RECOMPRA_PCT'] = df['RECOMPRA_PCT'].fillna(0).replace([np.inf, -np.inf], 0)
 
     # ── Métricas de governança ──
     metricas = {}
