@@ -68,13 +68,11 @@ def _assin(ws, l):
             value=f"{NOME_FERRAMENTA} — {AUTOR} — {REPOSITORIO}").font = FONT_S
 
 def _ajustar_largura(ws, dx):
+    from openpyxl.utils import get_column_letter
     for ci, col in enumerate(dx.columns, 1):
         comp = max(len(str(col)),
                    dx[col].astype(str).str.len().max() if len(dx) > 0 else 0)
-        ws.column_dimensions[
-            ws.cell(row=1, column=ci).column_letter
-        ].width = min(comp + 3, 35)
-
+        ws.column_dimensions[get_column_letter(ci)].width = min(comp + 3, 35)
 def criar_capa(wb):
     ws = wb.active
     ws.title = "0. Capa"
