@@ -33,7 +33,6 @@ def processar_dados_cvm(raw_dir):
 
     print(f"  {len(df)} linhas, {len(df.columns)} colunas")
 
-    # Mapeia colunas do layout CVM
     rename_map = {}
     for col in df.columns:
         c = col.strip().upper()
@@ -56,10 +55,11 @@ def processar_dados_cvm(raw_dir):
         df = df.drop_duplicates(subset=['CNPJ_FUNDO'], keep='last')
         print(f"  Removidas {antes - len(df)} duplicatas")
 
-    for col in ['PDD_PCT', 'RECOMPRA_PCT', 'RENTABILIDADE']:
-        df[col] = 0.0
-    for col in ['NUM_SACADOS', 'NUM_CEDENTES']:
-        df[col] = 0
+    df['PDD_PCT'] = 0.0
+    df['RECOMPRA_PCT'] = 0.0
+    df['RENTABILIDADE'] = 0.0
+    df['NUM_SACADOS'] = 0
+    df['NUM_CEDENTES'] = 0
 
     if 'VL_PL' in df.columns:
         df = df.sort_values('VL_PL', ascending=False)
