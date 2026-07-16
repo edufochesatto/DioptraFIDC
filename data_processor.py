@@ -1,6 +1,7 @@
 """
-data_processor.py — v5.0
-Schema CVM 202606 — processa todos os fundos sem filtro de classe.
+data_processor.py — v5.1
+Schema CVM 202606 — processa todos os fundos individuais
+Inclui TAB_II (Sacados) e DENOMINACAO_SOCIAL.
 """
 import pandas as pd
 import numpy as np
@@ -8,6 +9,7 @@ import re
 from pathlib import Path
 
 def _encontrar_coluna(df, *candidatos):
+    """Busca coluna por nome exato → case-insensitive → substring."""
     for nome in candidatos:
         if nome in df.columns:
             return nome
@@ -23,6 +25,7 @@ def _encontrar_coluna(df, *candidatos):
     return None
 
 def _limpar_numero(valor):
+    """Converte string formato brasileiro para float."""
     if isinstance(valor, (int, float)):
         return float(valor)
     try:
@@ -53,6 +56,7 @@ def tratar_numericos(df):
     return df
 
 def carregar_tabela(data_dir, nome_exato):
+    """Carrega CSV com padrão exato _NOME_."""
     data_dir = Path(data_dir)
     matches = sorted(data_dir.glob(f"inf_mensal_fidc_tab_{nome_exato}_*.csv"))
     if not matches:
@@ -70,7 +74,8 @@ def carregar_tabela(data_dir, nome_exato):
         return None
 
 def processar_duplicatas_pme(data_dir):
-    """Processa TODOS os fundos individuais - SEM filtro Duplicatas/PME."""
+    """Pipeline completo — processa TODOS os fundos individuais."""
+    # ── 1. Fundos — TAB_IV ──
     tab_iv = carregar_tabela(data_dir, "IV")
     if tab_iv is None or tab_iv.empty:
         raise FileNotFoundError("TAB_IV não encontrada.")
@@ -81,9 +86,10 @@ def processar_duplicatas_pme(data_dir):
 
     if 'TP_FUNDO_CLASSE' in tab_iv.columns:
         tab_iv = tab_iv[tab_iv['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
-        print(f"   → {len(tab_iv)} fundos individuais")
+        print(f"   → {len(tab_iv)} fundos individuais (excluindo agregados 'Classe')")
 
     if tab_iv.empty:
+        print("   [AVISO] Nenhum fundo individual encontrado.")
         return tab_iv, {}
 
     rename = {
@@ -101,11 +107,19 @@ def processar_duplicatas_pme(data_dir):
 
     tab_iv = tratar_numericos(tab_iv)
     tab_iv['CNPJ_FUNDO'] = tab_iv['CNPJ_FUNDO'].astype(str).str.strip()
+
+    # Pega o nome real do fundo
+    col_nome = _encontrar_coluna(tab_iv, 'DENOMINACAO_SOCIAL', 'DENOM_SOCIAL', 'NOME')
+    if col_nome:
+        tab_iv['DENOMINACAO_SOCIAL'] = tab_iv[col_nome].astype(str).str.strip()
+    else:
+        tab_iv['DENOMINACAO_SOCIAL'] = ''
+
     print(f"   → {len(tab_iv)} fundos disponíveis")
 
     df = tab_iv[['CNPJ_FUNDO']].copy()
 
-    # TAB_VI - Prazo
+    # ── 2. Prazo Médio — TAB_VI ──
     tab_vi = carregar_tabela(data_dir, "VI")
     prazo_df = None
     if tab_vi is not None and not tab_vi.empty:
@@ -145,7 +159,7 @@ def processar_duplicatas_pme(data_dir):
             if resultados:
                 prazo_df = pd.DataFrame(resultados)
 
-    # TAB_VII - Recompra e Cedentes
+    # ── 3. Recompra e Cedentes — TAB_VII ──
     tab_vii = carregar_tabela(data_dir, "VII")
     recompra_df = None
     cedentes_df = None
@@ -172,7 +186,26 @@ def processar_duplicatas_pme(data_dir):
                 cedentes_df = tab_vii.groupby('CNPJ_FUNDO').agg(
                     NUM_CEDENTES=(col_qt_ced, 'sum')
                 ).reset_index()
-                    # ── 5. Sacados — TAB_II ──
+
+    # ── 4. PDD — TAB_V ──
+    tab_v = carregar_tabela(data_dir, "V")
+    pdd_df = None
+    if tab_v is not None and not tab_v.empty:
+        col_cnpj = _encontrar_coluna(tab_v, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
+        if col_cnpj:
+            if col_cnpj != 'CNPJ_FUNDO':
+                tab_v = tab_v.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
+            tab_v['CNPJ_FUNDO'] = tab_v['CNPJ_FUNDO'].astype(str).str.strip()
+            if 'TP_FUNDO_CLASSE' in tab_v.columns:
+                tab_v = tab_v[tab_v['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
+            tab_v = tratar_numericos(tab_v)
+
+            col_pdd = _encontrar_coluna(tab_v, 'VL_PDD', 'VL_PROVISAO', 'PDD')
+            if col_pdd:
+                tab_v[col_pdd] = pd.to_numeric(tab_v[col_pdd], errors='coerce').fillna(0)
+                pdd_df = tab_v.groupby('CNPJ_FUNDO').agg(PDD=(col_pdd, 'sum')).reset_index()
+
+    # ── 5. Sacados — TAB_II ──
     tab_ii = carregar_tabela(data_dir, "II")
     sacados_df = None
     if tab_ii is not None and not tab_ii.empty:
@@ -196,28 +229,13 @@ def processar_duplicatas_pme(data_dir):
                     NUM_SACADOS=('CNPJ_FUNDO', 'count')
                 ).reset_index()
 
-    # TAB_V - PDD
-    tab_v = carregar_tabela(data_dir, "V")
-    pdd_df = None
-    if tab_v is not None and not tab_v.empty:
-        col_cnpj = _encontrar_coluna(tab_v, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
-        if col_cnpj:
-            if col_cnpj != 'CNPJ_FUNDO':
-                tab_v = tab_v.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-            tab_v['CNPJ_FUNDO'] = tab_v['CNPJ_FUNDO'].astype(str).str.strip()
-            if 'TP_FUNDO_CLASSE' in tab_v.columns:
-                tab_v = tab_v[tab_v['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
-            tab_v = tratar_numericos(tab_v)
-
-            col_pdd = _encontrar_coluna(tab_v, 'VL_PDD', 'VL_PROVISAO', 'PDD')
-            if col_pdd:
-                tab_v[col_pdd] = pd.to_numeric(tab_v[col_pdd], errors='coerce').fillna(0)
-                pdd_df = tab_v.groupby('CNPJ_FUNDO').agg(PDD=(col_pdd, 'sum')).reset_index()
-
-    #    # ── Merge ──
+    # ── Merge ──
     if 'VL_PL' in tab_iv.columns:
         tab_iv['VL_PL'] = pd.to_numeric(tab_iv['VL_PL'], errors='coerce').fillna(0)
-        df = df.merge(tab_iv[['CNPJ_FUNDO', 'VL_PL']], on='CNPJ_FUNDO', how='left')
+        cols_merge = ['CNPJ_FUNDO', 'VL_PL']
+        if 'DENOMINACAO_SOCIAL' in tab_iv.columns:
+            cols_merge.append('DENOMINACAO_SOCIAL')
+        df = df.merge(tab_iv[cols_merge], on='CNPJ_FUNDO', how='left')
 
     merges = [
         ('Prazo', prazo_df),
@@ -233,7 +251,8 @@ def processar_duplicatas_pme(data_dir):
                 for c in cols:
                     tbl[c] = pd.to_numeric(tbl[c], errors='coerce').fillna(0)
                 df = df.merge(tbl[['CNPJ_FUNDO'] + cols], on='CNPJ_FUNDO', how='left')
-    # Métricas derivadas
+
+    # ── Métricas derivadas ──
     if 'VL_PL' in df.columns:
         df['VL_PL'] = pd.to_numeric(df['VL_PL'], errors='coerce').fillna(0)
         if 'PDD' in df.columns:
@@ -247,15 +266,17 @@ def processar_duplicatas_pme(data_dir):
                 df['RECOMPRA_PCT'] = round(df['INDICE_RECOMPRA'] / df['VL_PL'].replace(0, np.nan) * 100, 2)
             df['RECOMPRA_PCT'] = df['RECOMPRA_PCT'].fillna(0).replace([np.inf, -np.inf], 0)
 
-    # Métricas de governança
+    # ── Métricas de governança ──
     metricas = {}
-        cols_metricas = {
-        'VL_PL': 'PL', 'PRAZO_MEDIO': 'Prazo Médio',
-        'PDD_PCT': 'PDD %PL', 'RECOMPRA_PCT': 'Recompra %PL',
+    cols_metricas = {
+        'VL_PL': 'PL',
+        'PRAZO_MEDIO': 'Prazo Médio',
+        'PDD_PCT': 'PDD %PL',
+        'RECOMPRA_PCT': 'Recompra %PL',
         'NUM_CEDENTES': 'Nº Cedentes',
         'NUM_SACADOS': 'Nº Sacados',
     }
-    for col in cols_metricas:
+    for col, nome in cols_metricas.items():
         if col in df.columns and df[col].notna().sum() > 0:
             v = df[col].dropna()
             if len(v) > 0:
