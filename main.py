@@ -3,6 +3,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from data_processor import processar_dados_cvm
 import pandas as pd
+import json
+import numpy as np
 
 DATA_DIR = Path("data")
 DOCS_DIR = Path("docs")
@@ -17,14 +19,15 @@ def main():
     df = processar_dados_cvm(DATA_DIR / "raw")
 
     print("\n[2/2] Gerando dados.json...")
-    import json
-    import numpy as np
 
     fundos = []
-    if not df.empty and 'VL_PL' in df.columns and df['VL_PL'].notna().any() and (df['VL_PL'] != 0).any():
+    if not df.empty and 'VL_PL' in df.columns:
+        # Converte de reais para milhoes se necessario
         if df['VL_PL'].max() > 1e8:
             df['VL_PL'] = df['VL_PL'] / 1e6
+            print(f"  PL convertido de reais para milhoes")
 
+        # Filtra PLs negativos e absurdos (> R$ 500 bi)
         df = df[df['VL_PL'].apply(lambda x: isinstance(x, (int, float)) and x >= 0 and x < 500000)]
         df = df.replace([np.inf, -np.inf], np.nan)
         df = df.where(pd.notna(df), None)
@@ -51,7 +54,7 @@ def main():
             "versao": "Julho/2026"
         }, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ dados.json: {len(fundos)} fundos")
+    print(f"  dados.json: {len(fundos)} fundos")
 
 if __name__ == "__main__":
     main()
