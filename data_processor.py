@@ -3,7 +3,6 @@ data_processor.py — Lê o CSV tab_I do FIDC baixado da CVM.
 """
 import pandas as pd
 from pathlib import Path
-import os
 
 COLUNAS_CVM = {
     'CNPJ_FUNDO': 'CNPJ_FUNDO',
@@ -40,28 +39,26 @@ def processar_dados_cvm(raw_dir):
     """Lê o arquivo tab_I e retorna DataFrame padronizado."""
     raw_path = Path(raw_dir)
     if not raw_path.exists():
-        print(f"   ⚠ Pasta {raw_path} não encontrada!")
+        print(f"  ⚠ Pasta {raw_path} não encontrada!")
         return pd.DataFrame()
 
-    # Procura arquivo tab_I
     arquivos = list(raw_path.glob("*tab_I*"))
     if not arquivos:
-        print(f"   ⚠ Nenhum arquivo tab_I encontrado em {raw_path}")
-        print(f"   Arquivos encontrados: {[f.name for f in raw_path.glob('*')]}")
+        print(f"  ⚠ Nenhum arquivo tab_I encontrado em {raw_path}")
+        print(f"  Arquivos encontrados: {[f.name for f in raw_path.glob('*')]}")
         return pd.DataFrame()
 
     arquivo = arquivos[0]
-    print(f"   Lendo {arquivo.name}...")
+    print(f"  Lendo {arquivo.name}...")
 
     try:
         df = pd.read_csv(arquivo, encoding='latin1', sep=';', dtype=str, low_memory=False)
     except:
         df = pd.read_csv(arquivo, encoding='utf-8', sep=';', dtype=str, low_memory=False)
 
-    print(f"   → {len(df)} linhas, {len(df.columns)} colunas")
-    print(f"   Colunas: {list(df.columns[:20])}")
+    print(f"  → {len(df)} linhas, {len(df.columns)} colunas")
+    print(f"  Colunas: {list(df.columns[:20])}")
 
-    # Renomeia colunas
     rename_map = {}
     for col in df.columns:
         col_upper = col.strip().upper()
@@ -70,20 +67,17 @@ def processar_dados_cvm(raw_dir):
 
     if rename_map:
         df = df.rename(columns=rename_map)
-        print(f"   Colunas mapeadas: {rename_map}")
+        print(f"  Colunas mapeadas: {rename_map}")
 
-    # Converte colunas numéricas
     for col in ['VL_PL', 'PRAZO_MEDIO', 'RENTABILIDADE', 'PDD_PCT', 'RECOMPRA_PCT', 'NUM_CEDENTES', 'NUM_SACADOS']:
         if col in df.columns:
             df[col] = df[col].apply(limpar_valor)
 
-    # Remove duplicatas
     if 'CNPJ_FUNDO' in df.columns:
         df = df.drop_duplicates(subset=['CNPJ_FUNDO'], keep='last')
 
-    # Ordena por PL
     if 'VL_PL' in df.columns:
         df = df.sort_values('VL_PL', ascending=False)
 
-    print(f"   ✅ {len(df)} fundos processados")
+    print(f"  ✅ {len(df)} fundos processados")
     return df
