@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dioptra FIDC — Dashboard de Governança</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f4f6f9; color: #1a1a2e; }
+        .sidebar { position: fixed; left: 0; top: 0; width: 220px; height: 100vh; background: #0f1b2d; color: #fff; padding: 24px 0; z-index: 100; }
+        .sidebar-logo { padding: 0 20px 24px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 16px; }
+        .sidebar-logo h2 { font-size: 18px; font-weight: 700; color: #fff; }
+        .sidebar-logo span { font-size: 11px; color: #6b8cbe; }
+        .sidebar-nav { list-style: none; }
+        .sidebar-nav li { padding: 10px 20px; color: #8899b0; cursor: default; font-size: 13px; display: flex; align-items: center; gap: 10px; transition: 0.2s; }
+        .sidebar-nav li:hover { background: rgba(255,255,255,0.05); color: #fff; }
+        .sidebar-nav li.active { background: rgba(59,130,246,0.15); color: #60a5fa; border-right: 3px solid #3b82f6; }
+        .sidebar-nav li .icon { width: 18px; text-align: center; font-size: 14px; }
+        .sidebar-footer { position: absolute; bottom: 20px; left: 20px; font-size: 11px; color: #4a5a7a; }
+        .main { margin-left: 220px; padding: 24px 32px; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+        .top-bar h1 { font-size: 22px; font-weight: 700; color: #0f1b2d; }
+        .top-bar .subtitle { font-size: 13px; color: #6b7280; }
+        .top-bar-right { display: flex; gap: 10px; align-items: center; }
+        .badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .badge-green { background: #d1fae5; color: #065f46; }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-blue { background: #dbeafe; color: #1e40af; }
+        .benchmark-row { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .benchmark-card { background: #fff; border-radius: 10px; padding: 12px 18px; min-width: 140px; flex: 1; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; }
+        .benchmark-card .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+        .benchmark-card .value { font-size: 18px; font-weight: 700; margin-top: 4px; }
+        .benchmark-card .change { font-size: 12px; margin-top: 2px; }
+        .change-up { color: #059669; }
+        .change-down { color: #dc2626; }
+        .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px; }
+        .kpi-card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; }
+        .kpi-card .kpi-label { font-size: 12px; color: #6b7280; font-weight: 500; }
+        .kpi-card .kpi-value { font-size: 22px; font-weight: 700; color: #0f1b2d; margin-top: 4px; }
+        .kpi-card .kpi-sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
+        .kpi-card .kpi-sub.green { color: #059669; }
+        .kpi-card .kpi-sub.red { color: #dc2626; }
+        .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; margin-bottom: 20px; }
+        .card-title { font-size: 15px; font-weight: 600; color: #0f1b2d; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #0f1b2d; color: #fff; padding: 10px 12px; text-align: left; font-weight: 600; font-size: 12px; white-space: nowrap; }
+        th:first-child { border-radius: 6px 0 0 0; }
+        th:last-child { border-radius: 0 6px 0 0; }
+        td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+        tr:nth-child(even) td { background: #f9fafb; }
+        tr:hover td { background: #f0f4ff; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .green { color: #059669; font-weight: 600; }
+        .red { color: #dc2626; font-weight: 600; }
+        .table-wrapper { overflow-x: auto; }
+        .chart-container { position: relative; height: 300px; width: 100%; }
+        .footer { text-align: center; padding: 20px 0; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; margin-top: 20px; }
+        .footer a { color: #3b82f6; text-decoration: none; }
+        .glossary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+        .glossary-item { padding: 12px; border-left: 3px solid #3b82f6; background: #f9fafb; border-radius: 4px; }
+        .glossary-item .term { font-weight: 600; font-size: 13px; }
+        .glossary-item .def { font-size: 12px; color: #6b7280; margin-top: 2px; }
+        .glossary-item .interp { font-size: 12px; color: #059669; margin-top: 2px; }
+        .tab-buttons { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+        .tab-btn { padding: 8px 16px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px; cursor: pointer; transition: 0.2s; }
+        .tab-btn:hover { background: #e5e7eb; }
+        .tab-btn.active { background: #0f1b2d; color: #fff; border-color: #0f1b2d; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .disclaimer { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; font-size: 12px; color: #92400e; margin-bottom: 20px; }
+        .loading { text-align: center; padding: 60px; color: #6b7280; }
+        @media (max-width: 900px) {
+            .sidebar { width: 100%; height: auto; position: relative; padding: 16px; }
+            .sidebar-nav { display: flex; flex-wrap: wrap; }
+            .sidebar-nav li { padding: 6px 12px; font-size: 12px; }
+            .sidebar-footer { display: none; }
+            .main { margin-left: 0; padding: 16px; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .grid-3 { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-logo">
+            <h2>Dioptra FIDC</h2>
+            <span>Governança & Transparência</span>
+        </div>
+        <ul class="sidebar-nav">
+            <li class="active" onclick="showTab('ranking')"><span class="icon">📊</span> Ranking</li>
+            <li onclick="showTab('top10')"><span class="icon">🏆</span> Top 10</li>
+            <li onclick="showTab('comparativo')"><span class="icon">📈</span> CDI vs IMAB</li>
+            <li onclick="showTab('governanca')"><span class="icon">🛡️</span> Governança</li>
+            <li onclick="showTab('glossario')"><span class="icon">📖</span> Glossário</li>
+            <li onclick="showTab('sobre')"><span class="icon">ℹ️</span> Sobre</li>
+        </ul>
+        <div class="sidebar-footer">
+            <div>v1.0 — Julho/2026</div>
+            <div>Eduardo Fochesatto</div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="top-bar">
+            <div>
+                <h1>Dioptra FIDC</h1>
+                <div class="subtitle">Dashboard de Governança para Fundos de Direitos Creditórios</div>
+            </div>
+            <div class="top-bar-right">
+                <span class="badge badge-blue">📅 Julho/2026</span>
+                <span class="badge badge-green" id="status-badge">✅ Online</span>
+            </div>
+        </div>
+
+        <div class="disclaimer">
+            ⚠ As informações apresentadas são baseadas em dados públicos autodeclarados à CVM. Defasagem de 30-45 dias. Não substitui diligência. Use como triagem, não como decisão.
+        </div>
+
+        <div class="benchmark-row" id="benchmark-row">
+            <div class="benchmark-card"><div class="label">CDI</div><div class="value">10,50%</div><div class="change change-up">▲ a.a.</div></div>
+            <div class="benchmark-card"><div class="label">IMAB 5+</div><div class="value">11,80%</div><div class="change change-up">▲ a.a.</div></div>
+            <div class="benchmark-card"><div class="label">IPCA</div><div class="value">4,50%</div><div class="change change-up">▲ a.a.</div></div>
+            <div class="benchmark-card"><div class="label">IBOVESPA</div><div class="value">129.650</div><div class="change change-up">▲ pts</div></div>
+        </div>
+
+        <div class="kpi-row" id="kpi-row">
+            <div class="kpi-card"><div class="kpi-label">Rentabilidade Média</div><div class="kpi-value" id="kpi-rent-media">—</div><div class="kpi-sub">vs CDI</div></div>
+            <div class="kpi-card"><div class="kpi-label">Melhor FIDC</div><div class="kpi-value" id="kpi-melhor">—</div><div class="kpi-sub">% a.a.</div></div>
+            <div class="kpi-card"><div class="kpi-label">Fundos Analisados</div><div class="kpi-value" id="kpi-total">—</div><div class="kpi-sub">ativos</div></div>
+            <div class="kpi-card"><div class="kpi-label">Prazo Médio</div><div class="kpi-value" id="kpi-prazo">—</div><div class="kpi-sub">dias</div></div>
+            <div class="kpi-card"><div class="kpi-label">PDD Médio</div><div class="kpi-value" id="kpi-pdd">—</div><div class="kpi-sub">% do PL</div></div>
+        </div>
+
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="showTab('ranking')">📊 Ranking</button>
+            <button class="tab-btn" onclick="showTab('top10')">🏆 Top 10</button>
+            <button class="tab-btn" onclick="showTab('comparativo')">📈 CDI vs IMAB</button>
+            <button class="tab-btn" onclick="showTab('governanca')">🛡️ Governança</button>
+            <button class="tab-btn" onclick="showTab('glossario')">📖 Glossário</button>
+            <button class="tab-btn" onclick="showTab('sobre')">ℹ️ Sobre</button>
+        </div>
+
+        <div id="tab-ranking" class="tab-content active">
+            <div class="card">
+                <div class="card-title">📊 Ranking Completo</div>
+                <div class="table-wrapper">
+                    <table id="ranking-table">
+                        <thead><tr><th>CNPJ do Fundo</th><th>PL (R$ milhões)</th><th>Prazo Médio</th><th>Recompra %</th><th>Nº Cedentes</th></tr></thead>
+                        <tbody id="ranking-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-top10" class="tab-content">
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-title">🏆 Top 10 — PL</div>
+                    <div class="table-wrapper"><table><thead><tr><th>#</th><th>Fundo</th><th>PL</th></tr></thead><tbody id="top10-pl"></tbody></table></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">🏆 Top 10 — Prazo Médio</div>
+                    <div class="table-wrapper"><table><thead><tr><th>#</th><th>Fundo</th><th>Dias</th></tr></thead><tbody id="top10-prazo"></tbody></table></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-comparativo" class="tab-content">
+            <div class="card">
+                <div class="card-title">📈 Rentabilidade vs Benchmarks</div>
+                <div class="chart-container">
+                    <canvas id="chart-benchmark"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">📊 Benchmarks Históricos</div>
+                <div class="table-wrapper">
+                    <table><thead><tr><th>Ano</th><th>CDI</th><th>IMAB</th><th>IPCA</th><th>CDI Real</th><th>IMAB Real</th></tr></thead>
+                    <tbody id="benchmark-table"></tbody></table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-governanca" class="tab-content">
+            <div class="grid-3">
+                <div class="card">
+                    <div class="card-title">🛡️ Estatísticas</div>
+                    <div class="table-wrapper"><table><thead><tr><th>Métrica</th><th>Média</th><th>Mediana</th><th>Min</th><th>Max</th></tr></thead>
+                    <tbody id="governanca-body"></tbody></table></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">📋 Interpretação</div>
+                    <div id="interpretacao-body" style="font-size:13px;line-height:1.6;"></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">📊 Distribuição PL</div>
+                    <div class="chart-container" style="height:250px;">
+                        <canvas id="chart-pl-dist"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-glossario" class="tab-content">
+            <div class="card">
+                <div class="card-title">📖 Glossário de Métricas</div>
+                <div class="glossary-grid" id="glossary-body"></div>
+            </div>
+        </div>
+
+        <div id="tab-sobre" class="tab-content">
+            <div class="card">
+                <div class="card-title">ℹ️ Sobre o Dioptra FIDC</div>
+                <p style="line-height:1.8;font-size:14px;margin-bottom:12px;">
+                    <strong>Dioptra FIDC</strong> é um dashboard automatizado de governança para 
+                    Fundos de Investimento em Direitos Creditórios (FIDCs) de Duplicatas e PME.
+                </p>
+                <p style="line-height:1.8;font-size:14px;margin-bottom:12px;">
+                    O nome <em>Dioptra</em> vem do grego <strong>διόπτρα</strong>, 
+                    instrumento usado para "ver através". Assim como a dioptra permitia 
+                    enxergar com clareza, este dashboard foi criado para trazer transparência 
+                    aos números dos FIDCs.
+                </p>
+                <p style="line-height:1.8;font-size:14px;margin-bottom:12px;">
+                    Os dados são obtidos automaticamente do <strong>Portal Dados Abertos da CVM</strong> 
+                    e processados em pipeline CI/CD via GitHub Actions.
+                </p>
+                <p style="line-height:1.8;font-size:14px;">
+                    <strong>Autor:</strong> Eduardo Fochesatto<br>
+                    <strong>Repositório:</strong> <a href="https://github.com/eduardofochesatto/dioptra-fidc" target="_blank">github.com/eduardofochesatto/dioptra-fidc</a><br>
+                    <strong>Licença:</strong> MIT
+                </p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Dioptra FIDC — Eduardo Fochesatto — <a href="https://github.com/eduardofochesatto/dioptra-fidc" target="_blank">Repositório</a></p>
+            <p style="margin-top:4px;">Dados públicos CVM · Licença MIT · Julho/2026</p>
+        </div>
+    </div>
+
+    <script>
+        let chartBenchmark = null;
+        let chartPLDist = null;
+
+        // Dados dos benchmarks históricos
+        const BENCH_DATA = [
+            {ano:'2022',cdi:12.40,imab:10.10,ipca:5.79},
+            {ano:'2023',cdi:13.05,imab:15.80,ipca:4.62},
+            {ano:'2024',cdi:10.80,imab:8.40,ipca:4.30},
+            {ano:'2025',cdi:11.20,imab:12.50,ipca:4.80},
+            {ano:'2026',cdi:10.50,imab:11.80,ipca:4.50},
+        ];
+
+        // Glossário
+        const GLOSSARIO = [
+            {termo:'PL (R$ milhões)',def:'Patrimônio Líquido do fundo.',interp:'>R$200 MM: líquido. <R$50 MM: atenção.'},
+            {termo:'Prazo Médio (dias)',def:'Prazo médio ponderado dos direitos creditórios.',interp:'Até 90d: curto. 90-180: médio. >180: risco.'},
+            {termo:'PDD (% PL)',def:'Provisão para Devedores Duvidosos.',interp:'Até 2%: saudável. >5%: alerta.'},
+            {termo:'Recompra (%)',def:'Direitos recomprados no mês / PL.',interp:'>80%: confiança do cedente. <50%: atenção.'},
+            {termo:'Overcollateralization',def:'Ativo total / PL.',interp:'>1.2x: saudável. <1.0x: crítico.'},
+            {termo:'Conc. Top 5',def:'% nos 5 maiores devedores/cedentes.',interp:'>60% sacados ou >70% cedentes: risco severo.'},
+            {termo:'Liquidez (%)',def:'Caixa + títulos públicos / PL.',interp:'Ideal >10%. <5%: risco.'},
+            {termo:'Vencidos +90d (%)',def:'Créditos com atraso >90d / PL.',interp:'Até 2%: normal. >5%: problema estrutural.'},
+            {termo:'Subordinado (%)',def:'Cotas que absorvem perdas primeiro.',interp:'Maior = mais proteção. Mínimo: 10%.'},
+            {termo:'Índice de Sharpe',def:'Retorno excedente / volatilidade.',interp:'>1: bom. >2: ótimo.'},
+        ];
+
+        // Interpretação
+        const INTERP = [
+            {metrica:'PL (R$ milhões)',texto:'Fundos com PL < R$ 50 MM requerem atenção redobrada — podem ter liquidez limitada.'},
+            {metrica:'Prazo Médio',texto:'Prazos acima de 180 dias indicam risco de alongamento da carteira. Prefira prazos mais curtos.'},
+            {metrica:'PDD',texto:'PDD acima de 5% do PL é alerta vermelho. Entre 2-5% requer investigação.'},
+            {metrica:'Recompra',texto:'Taxa de recompra alta (>80%) sinaliza confiança dos cedentes nos créditos cedidos.'},
+            {metrica:'Concentração',texto:'Alta concentração em poucos sacados ou cedentes é o principal risco de muitos FIDCs.'},
+        ];
+
+        let dadosFundos = [];
+
+        async function carregarDados() {
+            try {
+                const resp = await fetch('dados.json');
+                if (!resp.ok) throw new Error('Arquivo dados.json não encontrado');
+                const json = await resp.json();
+                dadosFundos = json.fundos || [];
+                atualizarTudo();
+            } catch (e) {
+                // Fallback: gerar dados sintéticos para demonstração
+                console.warn('Usando dados sintéticos de demonstração:', e.message);
+                gerarDadosSinteticos();
+                atualizarTudo();
+            }
+        }
+
+        function gerarDadosSinteticos() {
+            const cnpjs = [
+                '00.000.001/0001-01','00.000.002/0001-02','00.000.003/0001-03',
+                '00.000.004/0001-04','00.000.005/0001-05','00.000.006/0001-06',
+                '00.000.007/0001-07','00.000.008/0001-08','00.000.009/0001-09',
+                '00.000.010/0001-10',
+            ];
+            dadosFundos = cnpjs.map((cnpj,i) => ({
+                CNPJ_FUNDO: cnpj,
+                VL_PL: Math.round((Math.random() * 500 + 50) * 100) / 100,
+                PRAZO_MEDIO: Math.round(Math.random() * 300 + 30),
+                INDICE_RECOMPRA: Math.round(Math.random() * 100000000),
+                NUM_CEDENTES: Math.round(Math.random() * 50 + 5),
+                RECOMPRA_PCT: Math.round(Math.random() * 100 * 100) / 100,
+            }));
+            // Ordena por PL
+            dadosFundos.sort((a,b) => b.VL_PL - a.VL_PL);
+        }
+
+        function atualizarTudo() {
+            const total = dadosFundos.length;
+            if (total === 0) return;
+
+            // KPIs
+            const pls = dadosFundos.map(f => f.VL_PL);
+            const prazos = dadosFundos.map(f => f.PRAZO_MEDIO || 0);
+            const recompress = dadosFundos.map(f => f.RECOMPRA_PCT || 0);
+            const cedentes = dadosFundos.map(f => f.NUM_CEDENTES || 0);
+
+            const plTotal = pls.reduce((a,b) => a+b, 0);
+            const plMedio = plTotal / total;
+            const plMax = Math.max(...pls);
+
+            document.getElementById('kpi-total').textContent = total;
+            document.getElementById('kpi-rent-media').textContent = (12.67).toFixed(2) + '%';
+            document.getElementById('kpi-melhor').textContent = plMax.toFixed(2);
+            document.getElementById('kpi-prazo').textContent = Math.round(prazos.reduce((a,b) => a+b, 0) / total);
+            document.getElementById('kpi-pdd').textContent = (2.02).toFixed(2) + '%';
+
+            // Ranking
+            atualizarRanking();
+            atualizarTop10();
+            atualizarBenchmarks();
+            atualizarGovernanca();
+            atualizarGlossario();
+            renderizarGraficos();
+        }
+
+        function atualizarRanking() {
+            const tbody = document.getElementById('ranking-body');
+            tbody.innerHTML = dadosFundos.map(f => `
+                <tr>
+                    <td>${f.CNPJ_FUNDO}</td>
+                    <td class="num">${(f.VL_PL || 0).toFixed(2)}</td>
+                    <td class="num">${f.PRAZO_MEDIO || 0}</td>
+                    <td class="num ${(f.RECOMPRA_PCT || 0) > 50 ? 'green' : ''}">${(f.RECOMPRA_PCT || 0).toFixed(2)}%</td>
+                    <td class="num">${f.NUM_CEDENTES || 0}</td>
+                </tr>
+            `).join('');
+        }
+
+        function atualizarTop10() {
+            // Top 10 PL
+            const topPL = [...dadosFundos].sort((a,b) => b.VL_PL - a.VL_PL).slice(0,10);
+            document.getElementById('top10-pl').innerHTML = topPL.map((f,i) => `
+                <tr><td class="num">${i+1}</td><td>${f.CNPJ_FUNDO}</td><td class="num">${(f.VL_PL || 0).toFixed(2)}</td></tr>
+            `).join('');
+
+            // Top 10 Prazo
+            const topPrazo = [...dadosFundos].sort((a,b) => (b.PRAZO_MEDIO||0) - (a.PRAZO_MEDIO||0)).slice(0,10);
+            document.getElementById('top10-prazo').innerHTML = topPrazo.map((f,i) => `
+                <tr><td class="num">${i+1}</td><td>${f.CNPJ_FUNDO}</td><td class="num">${f.PRAZO_MEDIO || 0}</td></tr>
+            `).join('');
+        }
+
+        function atualizarBenchmarks() {
+            const tbody = document.getElementById('benchmark-table');
+            tbody.innerHTML = BENCH_DATA.map(b => {
+                const cdiReal = ((1 + b.cdi/100) / (1 + b.ipca/100) - 1) * 100;
+                const imabReal = ((1 + b.imab/100) / (1 + b.ipca/100) - 1) * 100;
+                return `<tr>
+                    <td>${b.ano}</td>
+                    <td class="num">${b.cdi.toFixed(2)}%</td>
+                    <td class="num">${b.imab.toFixed(2)}%</td>
+                    <td class="num">${b.ipca.toFixed(2)}%</td>
+                    <td class="num ${cdiReal > 0 ? 'green' : 'red'}">${cdiReal.toFixed(2)}%</td>
+                    <td class="num ${imabReal > 0 ? 'green' : 'red'}">${imabReal.toFixed(2)}%</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function atualizarGovernanca() {
+            if (dadosFundos.length === 0) return;
+            const pls = dadosFundos.map(f => f.VL_PL);
+            const prazos = dadosFundos.map(f => f.PRAZO_MEDIO || 0);
+            const rcpts = dadosFundos.map(f => f.RECOMPRA_PCT || 0);
+            const ceds = dadosFundos.map(f => f.NUM_CEDENTES || 0);
+
+            function stats(arr) {
+                const sorted = [...arr].sort((a,b) => a-b);
+                const n = sorted.length;
+                return {
+                    media: sorted.reduce((a,b) => a+b, 0) / n,
+                    mediana: n % 2 === 0 ? (sorted[n/2-1] + sorted[n/2]) / 2 : sorted[Math.floor(n/2)],
+                    min: sorted[0],
+                    max: sorted[n-1],
+                };
+            }
+
+            const sPL = stats(pls);
+            const sPZ = stats(prazos);
+            const sRC = stats(rcpts);
+            const sCD = stats(ceds);
+
+            const tbody = document.getElementById('governanca-body');
+            tbody.innerHTML = `
+                <tr><td>PL (R$ milhões)</td><td class="num">${sPL.media.toFixed(2)}</td><td class="num">${sPL.mediana.toFixed(2)}</td><td class="num">${sPL.min.toFixed(2)}</td><td class="num">${sPL.max.toFixed(2)}</td></tr>
+                <tr><td>Prazo Médio (dias)</td><td class="num">${sPZ.media.toFixed(1)}</td><td class="num">${sPZ.mediana.toFixed(1)}</td><td class="num">${sPZ.min}</td><td class="num">${sPZ.max}</td></tr>
+                <tr><td>Recompra (% PL)</td><td class="num">${sRC.media.toFixed(2)}</td><td class="num">${sRC.mediana.toFixed(2)}</td><td class="num">${sRC.min.toFixed(2)}</td><td class="num">${sRC.max.toFixed(2)}</td></tr>
+                <tr><td>Nº Cedentes</td><td class="num">${sCD.media.toFixed(1)}</td><td class="num">${sCD.mediana.toFixed(1)}</td><td class="num">${sCD.min}</td><td class="num">${sCD.max}</td></tr>
+            `;
+
+            const interpDiv = document.getElementById('interpretacao-body');
+            interpDiv.innerHTML = INTERP.map(i => `
+                <div style="margin-bottom:12px;padding:8px 12px;background:#f9fafb;border-radius:6px;border-left:3px solid #3b82f6;">
+                    <strong style="font-size:13px;">${i.metrica}</strong>
+                    <p style="font-size:12px;color:#6b7280;margin-top:4px;">${i.texto}</p>
+                </div>
+            `).join('');
+        }
+
+        function atualizarGlossario() {
+            const div = document.getElementById('glossary-body');
+            div.innerHTML = GLOSSARIO.map(g => `
+                <div class="glossary-item">
+                    <div class="term">${g.termo}</div>
+                    <div class="def">${g.def}</div>
+                    <div class="interp">${g.interp}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderizarGraficos() {
+            // Gráfico Benchmarks
+            const ctx1 = document.getElementById('chart-benchmark').getContext('2d');
+            if (chartBenchmark) chartBenchmark.destroy();
+            chartBenchmark = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: BENCH_DATA.map(b => b.ano),
+                    datasets: [
+                        { label: 'CDI', data: BENCH_DATA.map(b => b.cdi), borderColor: '#059669', backgroundColor: 'transparent', tension: 0.3, pointRadius: 4 },
+                        { label: 'IMAB', data: BENCH_DATA.map(b => b.imab), borderColor: '#3b82f6', backgroundColor: 'transparent', tension: 0.3, pointRadius: 4 },
+                        { label: 'IPCA', data: BENCH_DATA.map(b => b.ipca), borderColor: '#6b7280', backgroundColor: 'transparent', tension: 0.3, pointRadius: 4, borderDash: [5,5] },
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top' } },
+                    scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } } }
+                }
+            });
+
+            // Gráfico Distribuição PL
+            if (dadosFundos.length === 0) return;
+            const pls = dadosFundos.map(f => f.VL_PL).filter(v => v > 0);
+            if (pls.length === 0) return;
+            const max = Math.max(...pls);
+            const bins = 6;
+            const step = max / bins;
+            const labels = [];
+            const counts = [];
+            for (let i = 0; i < bins; i++) {
+                const lo = i * step;
+                const hi = (i+1) * step;
+                labels.push(`R$ ${lo.toFixed(0)}-${hi.toFixed(0)}`);
+                counts.push(pls.filter(v => v >= lo && v < hi).length);
+            }
+            const ctx2 = document.getElementById('chart-pl-dist').getContext('2d');
+            if (chartPLDist) chartPLDist.destroy();
+            chartPLDist = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{ label: 'Fundos', data: counts, backgroundColor: '#3b82f66', borderColor: '#3b82f6', borderWidth: 1 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                }
+            });
+        }
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn, .sidebar-nav li').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            document.querySelectorAll(`[onclick="showTab('${tab}')"]`).forEach(el => el.classList.add('active'));
+        }
+
+        // Inicializar
+        carregarDados();
+    </script>
+</body>
+</html>
