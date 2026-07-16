@@ -25,7 +25,7 @@ def main():
         if df['VL_PL'].max() > 1e8:
             df['VL_PL'] = df['VL_PL'] / 1e6
 
-        df = df[df['VL_PL'].apply(lambda x: isinstance(x, (int, float)) and x >= 0 and x &lt; 500000)]
+        df = df[df['VL_PL'].apply(lambda x: isinstance(x, (int, float)) and x >= 0 and x < 500000)]
         df = df.replace([np.inf, -np.inf], np.nan)
         df = df.where(pd.notna(df), None)
 
@@ -33,14 +33,23 @@ def main():
             d = {}
             for col in df.columns:
                 val = row[col]
-                if isinstance(val, (np.integer,)): d[col] = int(val)
-                elif isinstance(val, (np.floating,)): d[col] = float(val) if not pd.isna(val) else 0.0
-                elif isinstance(val, str): d[col] = val.strip()
-                else: d[col] = val
+                if isinstance(val, (np.integer,)):
+                    d[col] = int(val)
+                elif isinstance(val, (np.floating,)):
+                    d[col] = float(val) if not pd.isna(val) else 0.0
+                elif isinstance(val, str):
+                    d[col] = val.strip()
+                else:
+                    d[col] = val
             fundos.append(d)
 
     with open(DOCS_DIR / "dados.json", "w") as f:
-        json.dump({"fundos": fundos, "metricas": {}, "gerado_em": "2026-07-16", "versao": "Julho/2026"}, f, indent=2, ensure_ascii=False)
+        json.dump({
+            "fundos": fundos,
+            "metricas": {},
+            "gerado_em": "2026-07-16",
+            "versao": "Julho/2026"
+        }, f, indent=2, ensure_ascii=False)
 
     print(f"✅ dados.json: {len(fundos)} fundos")
 
