@@ -199,6 +199,33 @@
             color: #1e293b;
             box-shadow: 0 1px 2px rgba(0,0,0,0.08);
         }
+        /* SEARCH BAR */
+        .search-box {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            align-items: center;
+        }
+        .search-box input {
+            flex: 1;
+            max-width: 400px;
+            padding: 9px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            transition: border 0.15s;
+        }
+        .search-box input:focus {
+            border-color: #3b82f6;
+        }
+        .search-box .resultado {
+            font-size: 13px;
+            color: #64748b;
+        }
+        .search-box .resultado strong {
+            color: #1a1a2e;
+        }
         .page {
             display: none;
         }
@@ -217,6 +244,9 @@
             font-weight: 600;
             background: #0a1628;
             color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .table-card table {
             width: 100%;
@@ -241,7 +271,10 @@
             font-variant-numeric: tabular-nums;
         }
         .table-card td.green { color: #16a34a; font-weight: 600; }
-        .table-card td.red { color: #dc2626; font-weight: 600; }
+        .table-card td.highlight {
+            background: #dbeafe;
+            font-weight: 600;
+        }
         .table-card tr:hover { background: #f8fafc; }
         .table-card .empty {
             text-align: center;
@@ -305,6 +338,8 @@
             .main { padding: 16px; }
             .benchmark-grid { grid-template-columns: repeat(2, 1fr); }
             .metrics-row { grid-template-columns: repeat(2, 1fr); }
+            .search-box { flex-direction: column; align-items: stretch; }
+            .search-box input { max-width: 100%; }
         }
     </style>
 </head>
@@ -395,12 +430,20 @@
             <button onclick="irPara('sobre')">Sobre</button>
         </div>
 
+        <!-- SEARCH BAR -->
+        <div class="search-box">
+            <input type="text" id="input-busca" placeholder="Buscar fundo por nome ou CNPJ..." oninput="buscarFundo()">
+            <span class="resultado" id="resultado-busca"></span>
+        </div>
+
         <div class="table-card">
-            <h3>Ranking Completo</h3>
+            <h3>Ranking Completo <span id="ranking-count" style="font-weight:400;font-size:12px;"></span></h3>
             <table>
                 <thead>
                     <tr>
+                        <th>#</th>
                         <th>CNPJ do Fundo</th>
+                        <th>Fundo</th>
                         <th>PL</th>
                         <th>PDD</th>
                         <th>Recompra</th>
@@ -409,7 +452,7 @@
                     </tr>
                 </thead>
                 <tbody id="ranking-body">
-                    <tr><td colspan="6" class="empty">Carregando dados...</td></tr>
+                    <tr><td colspan="8" class="empty">Carregando dados...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -505,6 +548,7 @@
 
 <script>
     let dadosFundos = [];
+    let fundoIndices = {}; // CNPJ -> posição
 
     function formatarPL(valor) {
         if (!valor || isNaN(valor) || valor <= 0) return '—';
@@ -552,6 +596,56 @@
         if (pagina === 'governanca') atualizarGovernanca();
     }
 
+    function buscarFundo() {
+        const termo = document.getElementById('input-busca').value.trim().toLowerCase();
+        const divResultado = document.getElementById('resultado-busca');
+
+        if (!termo || termo.length < 3) {
+            divResultado.innerHTML = '';
+            atualizarRanking();
+            return;
+        }
+
+        const encontrados = dadosFundos.filter(f => {
+            const nome = (f.DENOMINACAO_SOCIAL || '').toLowerCase();
+            const cnpj = (f.CNPJ_FUNDO || '').toLowerCase();
+            return nome.includes(termo) || cnpj.includes(termo);
+        });
+
+        if (encontrados.length === 0) {
+            divResultado.innerHTML = '❌ Nenhum fundo encontrado';
+            atualizarRanking();
+            return;
+        }
+
+        // Destaca o primeiro encontrado
+        const idx = dadosFundos.indexOf(encontrados[0]);
+        const pos = idx + 1;
+        const nome = encontrados[0].DENOMINACAO_SOCIAL || encontrados[0].CNPJ_FUNDO || '';
+        divResultado.innerHTML = `🎯 <strong>#${pos}º</strong> — ${nome} (${encontrados.length} encontrado${encontrados.length > 1 ? 's' : ''})`;
+
+        // Atualiza tabela destacando
+        const tbody = document.getElementById('ranking-body');
+        tbody.innerHTML = dadosFundos.map((f, i) => {
+            const pl = f.VL_PL || 0;
+            const pdd = f.PDD_PCT || 0;
+            const recompra = f.RECOMPRA_PCT || 0;
+            const sacados = f.NUM_SACADOS || 0;
+            const cedentes = f.NUM_CEDENTES || 0;
+            const isEncontrado = encontrados.includes(f);
+            return `<tr class="${isEncontrado ? 'highlight' : ''}">
+                <td class="num">${i + 1}</td>
+                <td>${f.CNPJ_FUNDO || '---'}</td>
+                <td>${f.DENOMINACAO_SOCIAL || '---'}</td>
+                <td class="num"><strong>${formatarPL(pl)}</strong></td>
+                <td class="num ${pdd > 0 && pdd < 3 ? 'green' : ''}">${formatarPct(pdd)}</td>
+                <td class="num ${recompra > 50 ? 'green' : ''}">${formatarPct(recompra)}</td>
+                <td class="num">${formatarNum(sacados)}</td>
+                <td class="num">${formatarNum(cedentes)}</td>
+            </tr>`;
+        }).join('');
+    }
+
     async function carregarDados() {
         try {
             const respB = await fetch('benchmarks.json');
@@ -567,28 +661,38 @@
             const json = await resp.json();
             dadosFundos = json.fundos || [];
             console.log(`📊 ${dadosFundos.length} fundos`);
+
+            // Constrói índice de posições
+            dadosFundos.forEach((f, i) => {
+                if (f.CNPJ_FUNDO) fundoIndices[f.CNPJ_FUNDO] = i + 1;
+            });
+
             atualizarRanking();
             atualizarKPIs();
         } catch (e) {
             console.warn('Erro:', e.message);
-            document.getElementById('ranking-body').innerHTML = '<tr><td colspan="6" class="empty">Nenhum fundo disponível</td></tr>';
+            document.getElementById('ranking-body').innerHTML = '<tr><td colspan="8" class="empty">Nenhum fundo disponível</td></tr>';
         }
     }
 
     function atualizarRanking() {
         const tbody = document.getElementById('ranking-body');
+        document.getElementById('ranking-count').textContent = `— ${dadosFundos.length} fundos`;
+
         if (!dadosFundos || dadosFundos.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="empty">Nenhum fundo disponível</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum fundo disponível</td></tr>';
             return;
         }
-        tbody.innerHTML = dadosFundos.map(f => {
+        tbody.innerHTML = dadosFundos.map((f, i) => {
             const pl = f.VL_PL || 0;
             const pdd = f.PDD_PCT || 0;
             const recompra = f.RECOMPRA_PCT || 0;
             const sacados = f.NUM_SACADOS || 0;
             const cedentes = f.NUM_CEDENTES || 0;
             return `<tr>
+                <td class="num">${i + 1}</td>
                 <td>${f.CNPJ_FUNDO || '---'}</td>
+                <td>${f.DENOMINACAO_SOCIAL || '---'}</td>
                 <td class="num"><strong>${formatarPL(pl)}</strong></td>
                 <td class="num ${pdd > 0 && pdd < 3 ? 'green' : ''}">${formatarPct(pdd)}</td>
                 <td class="num ${recompra > 50 ? 'green' : ''}">${formatarPct(recompra)}</td>
