@@ -116,7 +116,7 @@
         </div>
 
         <div class="disclaimer">
-            ⚠ As informações apresentadas são baseadas em dados públicos autodeclarados à CVM. Defasagem de 30-45 dias. Não substitui diligência. Use como triagem, não como decisão.
+            ⚠ As informações apresentadas são baseadas em  públicos autodeclarados à CVM. Defasagem de 30-45 dias. Não substitui diligência. Use como triagem, não como decisão.
         </div>
 
         <div class="benchmark-row" id="benchmark-row">
@@ -225,7 +225,7 @@
                     aos números dos FIDCs.
                 </p>
                 <p style="line-height:1.8;font-size:14px;margin-bottom:12px;">
-                    Os dados são obtidos automaticamente do <strong>Portal Dados Abertos da CVM</strong> 
+                    Os  são obtidos automaticamente do <strong>Portal  Abertos da CVM</strong> 
                     e processados em pipeline CI/CD via GitHub Actions.
                 </p>
                 <p style="line-height:1.8;font-size:14px;">
@@ -238,7 +238,7 @@
 
         <div class="footer">
             <p>Dioptra FIDC — Eduardo Fochesatto — <a href="https://github.com/eduardofochesatto/dioptra-fidc" target="_blank">Repositório</a></p>
-            <p style="margin-top:4px;">Dados públicos CVM · Licença MIT · Julho/2026</p>
+            <p style="margin-top:4px;"> públicos CVM · Licença MIT · Julho/2026</p>
         </div>
     </div>
 
@@ -246,7 +246,7 @@
         let chartBenchmark = null;
         let chartPLDist = null;
 
-        // Dados dos benchmarks históricos
+        //  dos benchmarks históricos
         const BENCH_DATA = [
             {ano:'2022',cdi:12.40,imab:10.10,ipca:5.79},
             {ano:'2023',cdi:13.05,imab:15.80,ipca:4.62},
@@ -278,9 +278,9 @@
             {metrica:'Concentração',texto:'Alta concentração em poucos sacados ou cedentes é o principal risco de muitos FIDCs.'},
         ];
 
-        let dadosFundos = [];
+        let Fundos = [];
 
-        async function carregarDados() {
+        async function carregar() {
             try {
                 const resp = await fetch('dados.json');
                 if (!resp.ok) throw new Error('Arquivo dados.json não encontrado');
@@ -514,7 +514,29 @@
         }
 
         // Inicializar
-        carregarDados();
-    </script>
-</body>
-</html>
+                async function carregarDados() {
+            try {
+                // Carrega benchmarks
+                const respB = await fetch('benchmarks.json');
+                if (respB.ok) {
+                    const b = await respB.json();
+                    if (b.cdi) document.querySelector('.benchmark-card:nth-child(1) .value').textContent = b.cdi.valor + '%';
+                    if (b.imab) document.querySelector('.benchmark-card:nth-child(2) .value').textContent = b.imab.valor + '%';
+                    if (b.ipca) document.querySelector('.benchmark-card:nth-child(3) .value').textContent = b.ipca.valor + '%';
+                    if (b.ibovespa) document.querySelector('.benchmark-card:nth-child(4) .value').textContent = b.ibovespa.valor.toLocaleString('pt-BR');
+                    console.log('✅ Benchmarks carregados em tempo real');
+                }
+
+                // Carrega fundos
+                const resp = await fetch('dados.json');
+                if (!resp.ok) throw new Error('dados.json não encontrado');
+                const json = await resp.json();
+                dadosFundos = json.fundos || [];
+                console.log(`📊 ${dadosFundos.length} fundos carregados`);
+                atualizarTudo();
+            } catch (e) {
+                console.warn('Erro ao carregar dados:', e.message);
+                gerarDadosSinteticos();
+                atualizarTudo();
+            }
+        }
