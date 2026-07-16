@@ -27,8 +27,9 @@ def main():
             df['VL_PL'] = df['VL_PL'] / 1e6
             print(f"  PL convertido de reais para milhoes")
 
-        # Filtra PLs negativos e absurdos (> R$ 500 bi)
-        df = df[df['VL_PL'].apply(lambda x: isinstance(x, (int, float)) and x >= 0 and x < 500000)]
+        # Filtra PLs negativos e absurdos
+        mask = df['VL_PL'].apply(lambda x: isinstance(x, (int, float)) and x >= 0 and x < 500000)
+        df = df[mask]
         df = df.replace([np.inf, -np.inf], np.nan)
         df = df.where(pd.notna(df), None)
 
@@ -46,6 +47,9 @@ def main():
                     d[col] = val
             fundos.append(d)
 
+        print(f"  {len(fundos)} fundos com PL > 0")
+
+    # Salva dados.json
     with open(DOCS_DIR / "dados.json", "w") as f:
         json.dump({
             "fundos": fundos,
@@ -54,7 +58,19 @@ def main():
             "versao": "Julho/2026"
         }, f, indent=2, ensure_ascii=False)
 
-    print(f"  dados.json: {len(fundos)} fundos")
+    print(f"  dados.json salvo com {len(fundos)} fundos")
+
+    # Resumo
+    if fundos:
+        pls = [f.get('VL_PL', 0) for f in fundos if f.get('VL_PL', 0) > 0]
+        if pls:
+            print(f"  PL total: R$ {sum(pls):.2f} milhoes")
+            print(f"  PL medio: R$ {sum(pls)/len(pls):.2f} milhoes")
+            print(f"  Maior fundo: {fundos[0].get('DENOMINACAO_SOCIAL', '')[:50]}...")
+
+    print("\n" + "=" * 60)
+    print("Concluido!")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()
