@@ -1,50 +1,58 @@
 """
-Módulo responsável por baixar e extrair os dados do Informe Mensal de FIDCs
-do Portal de Dados Abertos da CVM.
+cvm_downloader.py — Download dos dados da CVM.
+Tenta baixar o mês mais recente. Se falhar, retorna False.
 """
 import requests
 import zipfile
-import io
-import os
-import re
 from pathlib import Path
 
-CVM_BASE_URL = "https://dados.cvm.gov.br/dados/FIDC/DOC/INF_MENSAL/DADOS"
+def baixar_arquivo(url, destino):
+    resposta = requests.get(url, timeout=60, headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    })
+    resposta.raise_for_status()
+    with open(destino, 'wb') as f:
+        f.write(resposta.content)
+    return destino
 
-def listar_meses_disponiveis():
-    response = requests.get(f"{CVM_BASE_URL}/", timeout=30)
-    response.raise_for_status()
-    padrao = r'inf_mensal_fidc_(\d{6})\.zip'
-    return sorted(set(re.findall(padrao, response.text)), reverse=True)
+def extrair_zip(zip_path, destino_dir):
+    import os
+    with zipfile.ZipFile(zip_path, 'r') as z:
+        z.extractall(destino_dir)
+    arquivos = [f for f in os.listdir(destino_dir) if f.endswith('.csv')]
+    print(f"   → Extraídos {len(arquivos)} arquivos CSV")
+    return arquivos
 
-def baixar_zip(competencia, dest_dir):
-    dest_dir = Path(dest_dir)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    url = f"{CVM_BASE_URL}/inf_mensal_fidc_{competencia}.zip"
-    print(f"[DOWNLOAD] Baixando {url}...")
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-        zf.extractall(dest_dir)
-    print(f"[OK] Extraído em {dest_dir}")
-    return dest_dir
+def obter_dados_recentes(data_dir):
+    data_dir = Path(data_dir)
+    raw_dir = data_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
 
-def baixar_historico(ano, dest_dir):
-    dest_dir = Path(dest_dir)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    url = f"{CVM_BASE_URL}/HIST/inf_mensal_fidc_{ano}.zip"
-    print(f"[DOWNLOAD] Baixando histórico {url}...")
-    response = requests.get(url, timeout=300)
-    response.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-        zf.extractall(dest_dir)
-    print(f"[OK] Histórico {ano} extraído em {dest_dir}")
-    return dest_dir
+    from datetime import datetime
+    hoje = datetime.now()
+    mes = hoje.month
+    ano = hoje.year
 
-def obter_dados_recentes(dest_dir, meses=1):
-    disponiveis = listar_meses_disponiveis()
-    if not disponiveis:
-        raise RuntimeError("Nenhum arquivo encontrado no repositório da CVM.")
-    for competencia in disponiveis[:meses]:
-        baixar_zip(competencia, dest_dir)
-    return Path(dest_dir)
+    for i in range(6):
+        m = mes - i
+        a = ano
+        while m <= 0:
+            m += 12
+            a -= 1
+        codigo = f"{a}{m:02d}"
+        nome_zip = f"inf_mensal_fidc_{codigo}.zip"
+        url = f"https://dados.cvm.gov.br/dados/FIDC/DOC/INF_MENSAL/DADOS/{nome_zip}"
+
+        print(f"   Tentando {nome_zip}...")
+        try:
+            zip_path = raw_dir / nome_zip
+            baixar_arquivo(url, zip_path)
+            print(f"   ✅ {nome_zip} baixado!")
+            extrair_zip(zip_path, raw_dir)
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"   ⚠ {nome_zip} indisponível: {e}")
+            continue
+
+    print("   ❌ Nenhum dado da CVM disponível.")
+    return False
