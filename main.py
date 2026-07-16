@@ -3,6 +3,10 @@ import json
 import numpy as np
 from pathlib import Path
 
+DOCS_DIR = Path("docs")
+DATA_DIR = Path("data")
+DOCS_DIR.mkdir(parents=True, exist_ok=True)
+
 def limpar_valor(valor):
     if pd.isna(valor):
         return 0.0
@@ -14,16 +18,12 @@ def limpar_valor(valor):
     except:
         return 0.0
 
-DOCS_DIR = Path("docs")
-DOCS_DIR.mkdir(parents=True, exist_ok=True)
-
 print("=" * 60)
 print("DIOPTRA FIDC")
 print("=" * 60)
 
 # Procura CSV
-data_path = Path("data")
-arquivos = list(data_path.glob("*tab_I*"))
+arquivos = list(DATA_DIR.glob("*tab_I*"))
 if not arquivos:
     print("  ERRO: Nenhum arquivo tab_I encontrado!")
     exit(1)
@@ -31,6 +31,7 @@ if not arquivos:
 arquivo = arquivos[0]
 print(f"\n[1/2] Lendo {arquivo.name}...")
 
+# Tenta latin1 primeiro (encoding real do CSV da CVM)
 try:
     df = pd.read_csv(arquivo, encoding='latin1', sep=';', dtype=str, low_memory=False)
 except:
@@ -41,7 +42,7 @@ except:
 
 print(f"  {len(df)} linhas, {len(df.columns)} colunas")
 
-# Renomeia colunas
+# Mapeia colunas (ACEITA minusculo OU maiusculo)
 rename_map = {}
 for col in df.columns:
     c = col.strip().upper()
@@ -51,39 +52,50 @@ for col in df.columns:
         rename_map[col] = 'DENOMINACAO_SOCIAL'
     elif c == 'TAB_I_VL_ATIVO':
         rename_map[col] = 'VL_ATIVO'
-df = df.rename(columns=rename_map)
 
-# Converte ativo
+df = df.rename(columns=rename_map)
+print(f"  Colunas mapeadas: {list(rename_map.keys())}")
+
+# Converte ativo para valor numerico
 if 'VL_ATIVO' in df.columns:
     df['VL_PL'] = df['VL_ATIVO'].apply(limpar_valor)
 else:
-    df['VL_PL'] = 0.0
+    print("  ERRO: coluna VL_ATIVO nao encontrada!")
+    print(f"  Colunas: {list(df.columns[:15])}")
+    exit(1)
 
-# Remove duplicatas
+print(f"  PL max (reais): R$ {df['VL_PL'].max():.2f}")
+
+# Remove duplicatas de CNPJ
 if 'CNPJ_FUNDO' in df.columns:
+    antes = len(df)
     df = df.drop_duplicates(subset=['CNPJ_FUNDO'], keep='last')
+    print(f"  Duplicatas removidas: {antes - len(df)}")
 
 # Converte reais para milhoes
 if df['VL_PL'].max() > 1e8:
     df['VL_PL'] = df['VL_PL'] / 1e6
-    print(f"  PL convertido para milhoes: max = {df['VL_PL'].max():.2f} MM")
+    print(f"  PL convertido para milhoes: max = R$ {df['VL_PL'].max():.2f} MM")
 
-# Filtra PLs negativos e absurdos
+# Filtra PLs negativos e absurdos (> R$ 500 bilhoes)
+antes = len(df)
 df = df[df['VL_PL'].apply(lambda x: isinstance(x, (int, float)) and x >= 0 and x < 500000)]
+print(f"  Fundos com PL valido: {len(df)} (removidos {antes - len(df)})")
+
 df = df.replace([np.inf, -np.inf], np.nan)
 df = df.where(pd.notna(df), None)
 
-# Colunas padrao
+# Colunas que nao existem no tab_I (inicializa como zero)
 df['PDD_PCT'] = 0.0
 df['RECOMPRA_PCT'] = 0.0
 df['RENTABILIDADE'] = 0.0
 df['NUM_SACADOS'] = 0
 df['NUM_CEDENTES'] = 0
 
-# Ordena por PL
+# Ordena por PL decrescente
 df = df.sort_values('VL_PL', ascending=False)
 
-# Converte para lista
+# Converte para lista de dicionarios
 fundos = []
 for _, row in df.iterrows():
     d = {}
@@ -109,15 +121,14 @@ with open(DOCS_DIR / "dados.json", "w") as f:
         "versao": "Julho/2026"
     }, f, indent=2, ensure_ascii=False)
 
-# Amostra
-if fundos:
-    print(f"\n  Top 5 fundos:")
-    for f in fundos[:5]:
-        nome = (f.get('DENOMINACAO_SOCIAL', '') or '')[:60]
-        pl = f.get('VL_PL', 0)
-        print(f"    R$ {pl:>10.2f} MM | {nome}")
+# Amostra dos primeiros
+print(f"\n  TOP 10 FUNDOS:")
+for f in fundos[:10]:
+    nome = (f.get('DENOMINACAO_SOCIAL', '') or '')[:55]
+    pl = f.get('VL_PL', 0)
+    print(f"  R$ {pl:>10.2f} MM | {nome}")
 
-print(f"\n  Total: {len(fundos)} fundos")
+print(f"\n  TOTAL: {len(fundos)} fundos")
 print("\n" + "=" * 60)
 print("CONCLUIDO!")
 print("=" * 60)
