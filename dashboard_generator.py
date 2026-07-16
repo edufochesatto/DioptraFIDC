@@ -1,253 +1,441 @@
 """
-data_processor.py — v5.0
-Schema CVM 202606 — processa todos os fundos sem filtro de classe.
+DIOPTRA FIDC — Dashboard de Governança para FIDCs de Duplicatas/PME
+Autor: Eduardo Fochesatto
+Licença: MIT
 """
 import pandas as pd
 import numpy as np
-import re
 from pathlib import Path
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.utils import get_column_letter
 
-def _encontrar_coluna(df, *candidatos):
-    """Busca coluna por nome exato → case-insensitive → substring."""
-    for nome in candidatos:
-        if nome in df.columns:
-            return nome
-        for col in df.columns:
-            if col.strip().upper() == nome.upper():
-                return col
-    upper = [n.upper() for n in candidatos]
-    for col in df.columns:
-        cu = col.strip().upper()
-        for n in upper:
-            if n in cu or cu in n:
-                return col
-    return None
+NOME_FERRAMENTA = "Dioptra FIDC"
+AUTOR = "Eduardo Fochesatto"
+REPOSITORIO = "https://github.com/eduardofochesatto/dioptra-fidc"
+VERSAO = "Julho/2026"
 
-def _limpar_numero(valor):
-    """Converte string formato brasileiro para float."""
-    if isinstance(valor, (int, float)):
-        return float(valor)
-    try:
-        s = str(valor).strip()
-        if not s or s == 'nan':
-            return 0.0
-        s = s.replace('R$', '').replace('$', '').replace(' ', '')
-        s = s.replace('.', '').replace(',', '.')
-        s = re.sub(r'[^\d.-]', '', s)
-        return float(s)
-    except (ValueError, TypeError):
-        return 0.0
+AZUL_ESCURO = "1F3864"
+BRANCO = "FFFFFF"
+VERDE = "C6EFCE"
+VERMELHO = "FFC7CE"
+AMARELO = "FFEB9C"
+CINZA_L = "F5F5F5"
+CINZA_T = "808080"
+PRETO = "1A1A1A"
 
-def _converter_coluna_numerica(df, coluna):
-    if coluna not in df.columns:
-        return df
-    df[coluna] = df[coluna].apply(_limpar_numero)
-    return df
+FILL_H = PatternFill("solid", fgColor=AZUL_ESCURO)
+FILL_Z = PatternFill("solid", fgColor=CINZA_L)
+FILL_V = PatternFill("solid", fgColor=VERDE)
+FILL_R = PatternFill("solid", fgColor=VERMELHO)
+FILL_A = PatternFill("solid", fgColor=AMARELO)
 
-def tratar_numericos(df):
-    for col in df.columns:
-        if col.startswith('VL_') or col.startswith('QT_') or col.startswith('TAB_'):
-            df = _converter_coluna_numerica(df, col)
-        elif df[col].dtype == object:
-            amostra = df[col].dropna().head(20).astype(str).str.cat(sep=' ')
-            if re.search(r'[\d,.]', amostra):
-                df = _converter_coluna_numerica(df, col)
-    return df
+FONT_H = Font(name="Calibri", bold=True, color=BRANCO, size=11)
+FONT_T = Font(name="Calibri", bold=True, size=18, color=AZUL_ESCURO)
+FONT_T2 = Font(name="Calibri", bold=True, size=14, color=AZUL_ESCURO)
+FONT_S = Font(name="Calibri", italic=True, size=11, color=CINZA_T)
+FONT_D = Font(name="Calibri", bold=True, size=12, color=AZUL_ESCURO)
+FONT_N = Font(name="Calibri", size=10)
 
-def carregar_tabela(data_dir, nome_exato):
-    """Carrega CSV com padrão exato _NOME_."""
-    data_dir = Path(data_dir)
-    matches = sorted(data_dir.glob(f"inf_mensal_fidc_tab_{nome_exato}_*.csv"))
-    if not matches:
-        matches = sorted(data_dir.glob(f"*_tab_{nome_exato}_*.csv"))
-    if not matches:
-        return None
-    arquivo = matches[0]
-    print(f"   [LOAD] {arquivo.name}")
-    try:
-        df = pd.read_csv(arquivo, sep=';', encoding='latin1', decimal=',')
-        print(f"   [OK] {len(df)} linhas, {len(df.columns)} colunas")
-        return df
-    except Exception as e:
-        print(f"   [ERRO] {e}")
-        return None
+AL = Alignment(horizontal="left", vertical="top", wrap_text=True)
+AR = Alignment(horizontal="right", vertical="center")
+AC = Alignment(horizontal="center", vertical="center")
 
-def processar_duplicatas_pme(data_dir):
-    """
-    Pipeline completo — SEM filtro de classe Duplicatas/PME.
-    Processa TODOS os fundos individuais disponíveis.
-    """
-    # ── 1. Fundos — TAB_IV ──
-    tab_iv = carregar_tabela(data_dir, "IV")
-    if tab_iv is None or tab_iv.empty:
-        raise FileNotFoundError("TAB_IV não encontrada.")
+BENCH = {
+    "CDI": {"2022": 12.40, "2023": 13.05, "2024": 10.80, "2025": 11.20, "2026": 10.50},
+    "IMAB": {"2022": 10.10, "2023": 15.80, "2024": 8.40, "2025": 12.50, "2026": 11.80},
+    "IPCA": {"2022": 5.79, "2023": 4.62, "2024": 4.30, "2025": 4.80, "2026": 4.50},
+}
 
-    # Mostra valores de TP_FUNDO_CLASSE
-    if 'TP_FUNDO_CLASSE' in tab_iv.columns:
-        valores = tab_iv['TP_FUNDO_CLASSE'].dropna().unique().tolist()
-        print(f"   [DEBUG] TP_FUNDO_CLASSE: {valores}")
+def _cab(ws, l, n):
+    for c in range(1, n + 1):
+        cl = ws.cell(row=l, column=c)
+        cl.fill = FILL_H
+        cl.font = FONT_H
+        cl.alignment = AC
 
-    # Filtra apenas FUNDOS INDIVIDUAIS (exclui agregados 'Classe')
-    if 'TP_FUNDO_CLASSE' in tab_iv.columns:
-        tab_iv = tab_iv[tab_iv['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
-        print(f"   → {len(tab_iv)} fundos individuais (excluindo agregados 'Classe')")
+def _zeb(ws, i, f, n):
+    for r in range(i, f + 1):
+        if (r - i) % 2 == 1:
+            for c in range(1, n + 1):
+                ws.cell(row=r, column=c).fill = FILL_Z
 
-    if tab_iv.empty:
-        print("   [AVISO] Nenhum fundo individual encontrado.")
-        return tab_iv, {}
+def _assin(ws, l):
+    ws.cell(row=l, column=1,
+            value=f"{NOME_FERRAMENTA} — {AUTOR} — {REPOSITORIO}").font = FONT_S
 
-    # Renomeia colunas
-    rename = {
-        'CNPJ_FUNDO_CLASSE': 'CNPJ_FUNDO',
-        'DENOM_SOCIAL': 'DENOMINACAO_SOCIAL',
-        'TAB_IV_A_VL_PL': 'VL_PL',
-    }
-    tab_iv = tab_iv.rename(columns={k: v for k, v in rename.items() if k in tab_iv.columns})
+def _ajustar_largura(ws, dx):
+    for ci, col in enumerate(dx.columns, 1):
+        comp = max(len(str(col)),
+                   dx[col].astype(str).str.len().max() if len(dx) > 0 else 0)
+        ws.column_dimensions[get_column_letter(ci)].width = min(comp + 3, 35)
 
-    col_cnpj = _encontrar_coluna(tab_iv, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
-    if col_cnpj and col_cnpj != 'CNPJ_FUNDO':
-        tab_iv = tab_iv.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-    if 'CNPJ_FUNDO' not in tab_iv.columns:
-        raise KeyError("CNPJ não encontrado.")
-
-    tab_iv = tratar_numericos(tab_iv)
-    tab_iv['CNPJ_FUNDO'] = tab_iv['CNPJ_FUNDO'].astype(str).str.strip()
-    print(f"   → {len(tab_iv)} fundos disponíveis")
-
-    df = tab_iv[['CNPJ_FUNDO']].copy()
-
-    # ── 2. Prazo Médio — TAB_VI ──
-    tab_vi = carregar_tabela(data_dir, "VI")
-    prazo_df = None
-    if tab_vi is not None and not tab_vi.empty:
-        col_cnpj = _encontrar_coluna(tab_vi, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
-        if col_cnpj:
-            if col_cnpj != 'CNPJ_FUNDO':
-                tab_vi = tab_vi.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-            tab_vi['CNPJ_FUNDO'] = tab_vi['CNPJ_FUNDO'].astype(str).str.strip()
-            if 'TP_FUNDO_CLASSE' in tab_vi.columns:
-                tab_vi = tab_vi[tab_vi['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
-            tab_vi = tratar_numericos(tab_vi)
-
-            dias_por_coluna = {
-                'TAB_VI_A1_VL_PRAZO_VENC_30': 15,
-                'TAB_VI_A2_VL_PRAZO_VENC_60': 45,
-                'TAB_VI_A3_VL_PRAZO_VENC_90': 75,
-                'TAB_VI_A4_VL_PRAZO_VENC_120': 105,
-                'TAB_VI_A5_VL_PRAZO_VENC_150': 135,
-                'TAB_VI_A6_VL_PRAZO_VENC_180': 165,
-                'TAB_VI_A7_VL_PRAZO_VENC_360': 270,
-                'TAB_VI_A8_VL_PRAZO_VENC_720': 540,
-                'TAB_VI_A9_VL_PRAZO_VENC_1080': 900,
-                'TAB_VI_A10_VL_PRAZO_VENC_MAIOR_1080': 1200,
-            }
-            resultados = []
-            for cnpj, grupo in tab_vi.groupby('CNPJ_FUNDO'):
-                sp = 0.0; peso = 0.0
-                for col, dias in dias_por_coluna.items():
-                    if col in grupo.columns:
-                        v = pd.to_numeric(grupo[col], errors='coerce').sum()
-                        if v > 0:
-                            sp += v * dias; peso += v
-                prazo = round(sp / peso, 1) if peso > 0 else 0
-                resultados.append({'CNPJ_FUNDO': cnpj, 'PRAZO_MEDIO': prazo})
-            if resultados:
-                prazo_df = pd.DataFrame(resultados)
-
-    # ── 3. Recompra e Cedentes — TAB_VII ──
-    tab_vii = carregar_tabela(data_dir, "VII")
-    recompra_df = None; cedentes_df = None
-    if tab_vii is not None and not tab_vii.empty:
-        col_cnpj = _encontrar_coluna(tab_vii, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
-        if col_cnpj:
-            if col_cnpj != 'CNPJ_FUNDO':
-                tab_vii = tab_vii.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-            tab_vii['CNPJ_FUNDO'] = tab_vii['CNPJ_FUNDO'].astype(str).str.strip()
-            if 'TP_FUNDO_CLASSE' in tab_vii.columns:
-                tab_vii = tab_vii[tab_vii['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
-            tab_vii = tratar_numericos(tab_vii)
-
-            col_rec = _encontrar_coluna(tab_vii, 'TAB_VII_D_2_VL_RECOMPRA', 'TAB_VII_D_3_VL_CONTAB_RECOMPRA')
-            if col_rec:
-                tab_vii[col_rec] = pd.to_numeric(tab_vii[col_rec], errors='coerce').fillna(0)
-                recompra_df = tab_vii.groupby('CNPJ_FUNDO').agg(
-                    INDICE_RECOMPRA=(col_rec, 'sum')
-                ).reset_index()
-
-            col_qt_ced = _encontrar_coluna(tab_vii, 'TAB_VII_B1_1_QT_CEDENTE')
-            if col_qt_ced:
-                tab_vii[col_qt_ced] = pd.to_numeric(tab_vii[col_qt_ced], errors='coerce').fillna(0)
-                cedentes_df = tab_vii.groupby('CNPJ_FUNDO').agg(
-                    NUM_CEDENTES=(col_qt_ced, 'sum')
-                ).reset_index()
-
-    # ── 4. PDD — TAB_V ──
-    tab_v = carregar_tabela(data_dir, "V")
-    pdd_df = None
-    if tab_v is not None and not tab_v.empty:
-        col_cnpj = _encontrar_coluna(tab_v, 'CNPJ_FUNDO', 'CNPJ_FUNDO_CLASSE')
-        if col_cnpj:
-            if col_cnpj != 'CNPJ_FUNDO':
-                tab_v = tab_v.rename(columns={col_cnpj: 'CNPJ_FUNDO'})
-            tab_v['CNPJ_FUNDO'] = tab_v['CNPJ_FUNDO'].astype(str).str.strip()
-            if 'TP_FUNDO_CLASSE' in tab_v.columns:
-                tab_v = tab_v[tab_v['TP_FUNDO_CLASSE'].astype(str).str.upper() == 'FUNDO'].copy()
-            tab_v = tratar_numericos(tab_v)
-
-            col_pdd = _encontrar_coluna(tab_v, 'VL_PDD', 'VL_PROVISAO', 'PDD')
-            if col_pdd:
-                tab_v[col_pdd] = pd.to_numeric(tab_v[col_pdd], errors='coerce').fillna(0)
-                pdd_df = tab_v.groupby('CNPJ_FUNDO').agg(PDD=(col_pdd, 'sum')).reset_index()
-
-    # ── Merge ──
-    if 'VL_PL' in tab_iv.columns:
-        tab_iv['VL_PL'] = pd.to_numeric(tab_iv['VL_PL'], errors='coerce').fillna(0)
-        df = df.merge(tab_iv[['CNPJ_FUNDO', 'VL_PL']], on='CNPJ_FUNDO', how='left')
-
-    merges = [
-        ('Prazo', prazo_df), ('Recompra', recompra_df),
-        ('PDD', pdd_df), ('Cedentes', cedentes_df),
+def criar_capa(wb):
+    ws = wb.active
+    ws.title = "0. Capa"
+    itens = [
+        (1, f"{NOME_FERRAMENTA}", FONT_T),
+        (2, "Dashboard de Governança para FIDCs de Duplicatas/PME", FONT_D),
+        (3, f"{AUTOR} — {VERSAO}", FONT_S),
+        (5, "╔╗", None),
+        (6, "║           AVISO IMPORTANTE                       ║", None),
+        (7, "╠╣", None),
+        (8, "║  Dados públicos autodeclarados à CVM.           ║", None),
+        (9, "║  LIMITAÇÕES: defasagem 30-45d, preenchimento    ║", None),
+        (10, "║  parcial, classificação aproximada.             ║", None),
+        (11, "╠╣", None),
+        (12, "║  NÃO SUBSTITUI DILIGÊNCIA — triagem, não decisão║", None),
+        (13, "╚╝", None),
+        (15, f"📬 {AUTOR}", FONT_D),
+        (16, f"Repositório: {REPOSITORIO}", FONT_S),
+        (17, "Licença: MIT", FONT_S),
+        (19, "📋 Abas: 0.Capa | 1.Ranking | 2.Top10 | 3.CDI vs IMAB | 4.Governança | 5.Propósito | 6.Fontes | 7.Glossário", FONT_N),
     ]
-    for nome, tbl in merges:
-        if tbl is not None and not tbl.empty:
-            cols = [c for c in tbl.columns if c != 'CNPJ_FUNDO']
-            if cols:
-                for c in cols:
-                    tbl[c] = pd.to_numeric(tbl[c], errors='coerce').fillna(0)
-                df = df.merge(tbl[['CNPJ_FUNDO'] + cols], on='CNPJ_FUNDO', how='left')
+    for l, txt, st in itens:
+        c = ws.cell(row=l, column=1, value=txt)
+        if st:
+            c.font = st
+    for l in [6, 10, 12]:
+        ws.cell(row=l, column=1).font = Font(name="Consolas", bold=True, size=10, color="CC0000")
+    for l in range(5, 14):
+        ws.cell(row=l, column=1).font = Font(name="Consolas", size=10, color=PRETO)
+    ws.column_dimensions["A"].width = 100
+    ws.sheet_properties.tabColor = "CC0000"
 
-    # ── Métricas derivadas ──
-    if 'VL_PL' in df.columns:
-        df['VL_PL'] = pd.to_numeric(df['VL_PL'], errors='coerce').fillna(0)
-        if 'PDD' in df.columns:
-            df['PDD'] = pd.to_numeric(df['PDD'], errors='coerce').fillna(0)
-            with np.errstate(divide='ignore', invalid='ignore'):
-                df['PDD_PCT'] = round(df['PDD'] / df['VL_PL'].replace(0, np.nan) * 100, 2)
-            df['PDD_PCT'] = df['PDD_PCT'].fillna(0).replace([np.inf, -np.inf], 0)
-        if 'INDICE_RECOMPRA' in df.columns:
-            df['INDICE_RECOMPRA'] = pd.to_numeric(df['INDICE_RECOMPRA'], errors='coerce').fillna(0)
-            with np.errstate(divide='ignore', invalid='ignore'):
-                df['RECOMPRA_PCT'] = round(df['INDICE_RECOMPRA'] / df['VL_PL'].replace(0, np.nan) * 100, 2)
-            df['RECOMPRA_PCT'] = df['RECOMPRA_PCT'].fillna(0).replace([np.inf, -np.inf], 0)
-
-    # ── Métricas de governança ──
-    metricas = {}
-    cols_metricas = {
-        'VL_PL': 'PL', 'PRAZO_MEDIO': 'Prazo Médio',
-        'PDD_PCT': 'PDD %PL', 'RECOMPRA_PCT': 'Recompra %PL',
+def criar_ranking(wb, df):
+    ws = wb.create_sheet("1. Ranking Completo")
+    MAPA = {
+        'CNPJ_FUNDO': 'CNPJ do Fundo',
+        'DENOMINACAO_SOCIAL': 'Nome do Fundo',
+        'GESTORA': 'Gestora',
+        'CLASSE': 'Classe',
+        'VL_PL': 'PL (R$ milhões)',
+        'PRAZO_MEDIO': 'Prazo Médio (dias)',
+        'RENTABILIDADE': 'Rentabilidade (% a.a.)',
+        'PDD_PCT': 'PDD (% PL)',
+        'RECOMPRA_PCT': 'Recompra (%)',
+        'PCT_SUBORDINADO': 'Subordinado (%)',
+        'OVERCOLLATERALIZATION': 'Overcoll. (x)',
+        'NUM_SACADOS': 'Nº Sacados',
         'NUM_CEDENTES': 'Nº Cedentes',
+        'CONC_TOP5_SACADOS': 'Conc. Top5 Sacados (%)',
+        'CONC_TOP5_CEDENTES': 'Conc. Top5 Cedentes (%)',
+        'PCT_VENCIDOS': 'Vencidos +90d (%)',
+        'PCT_LIQUIDEZ': 'Liquidez (%)',
+        'TAXA_ADM': 'Taxa Adm (% a.a.)',
+        'RATING': 'Rating',
     }
-    for col, nome in cols_metricas.items():
-        if col in df.columns and df[col].notna().sum() > 0:
-            v = df[col].dropna()
-            if len(v) > 0:
-                metricas[col] = {
-                    'media': round(v.mean(), 2),
-                    'mediana': round(v.median(), 2),
-                    'desvio_padrao': round(v.std(), 2),
-                    'min': round(v.min(), 2),
-                    'max': round(v.max(), 2),
-                    'p25': round(v.quantile(0.25), 2),
-                    'p75': round(v.quantile(0.75), 2),
-                }
-    return df, metricas
+    cols = [c for c in MAPA if c in df.columns]
+    if not cols:
+        ws.cell(row=1, column=1, value="Nenhum dado disponível.").font = FONT_D
+        return
+    dx = df[cols].copy()
+    dx.columns = [MAPA[c] for c in cols]
+    if 'PL (R$ milhões)' in dx.columns:
+        dx['PL (R$ milhões)'] = pd.to_numeric(dx['PL (R$ milhões)'], errors='coerce').fillna(0)
+        dx['PL (R$ milhões)'] = (dx['PL (R$ milhões)'] / 1_000_000).round(2)
+        dx = dx.sort_values('PL (R$ milhões)', ascending=False)
+    elif len(dx.columns) > 1:
+        for c in dx.columns:
+            if dx[c].dtype in ('float64', 'int64'):
+                dx = dx.sort_values(c, ascending=False)
+                break
+        else:
+            dx = dx.sort_values(dx.columns[0], ascending=False)
+    for r, row in enumerate(dataframe_to_rows(dx, index=False, header=True), 1):
+        for c, v in enumerate(row, 1):
+            ws.cell(row=r, column=c, value=v)
+    nc = len(dx.columns)
+    if nc == 0:
+        return
+    ul = len(dx) + 1
+    _cab(ws, 1, nc)
+    _zeb(ws, 2, ul, nc)
+    _ajustar_largura(ws, dx)
+    _assin(ws, ul + 2)
+    ws.auto_filter.ref = f"A1:{get_column_letter(nc)}{ul}"
+    ws.freeze_panes = "A2"
+
+def criar_top10(wb, df):
+    ws = wb.create_sheet("2. Top 10 por Métrica")
+    METS = [
+        ("PL (R$ milhões)", "VL_PL", False),
+        ("Rentabilidade (% a.a.)", "RENTABILIDADE", False),
+        ("Menor PDD (% PL)", "PDD_PCT", True),
+        ("Maior Overcollateralization", "OVERCOLLATERALIZATION", False),
+        ("Maior Liquidez (%)", "PCT_LIQUIDEZ", False),
+        ("Menor Conc. Top5 Sacados (%)", "CONC_TOP5_SACADOS", True),
+        ("Menor Conc. Top5 Cedentes (%)", "CONC_TOP5_CEDENTES", True),
+        ("Maior Nº de Sacados", "NUM_SACADOS", False),
+        ("Menor % Vencidos +90d", "PCT_VENCIDOS", True),
+        ("Maior Recompra (%)", "RECOMPRA_PCT", False),
+    ]
+    linha = 1
+    for titulo, coluna, asc in METS:
+        if coluna not in df.columns:
+            continue
+        v = df[coluna].dropna()
+        if len(v) == 0:
+            continue
+        top = df.sort_values(coluna, ascending=asc).head(10)
+        ws.cell(row=linha, column=1, value=f"TOP 10 — {titulo}").font = FONT_D
+        linha += 1
+        for c, t in enumerate(["#", "Fundo", "Gestora", "Valor"], 1):
+            ws.cell(row=linha, column=c, value=t)
+        _cab(ws, linha, 4)
+        linha += 1
+        for idx, (_, row) in enumerate(top.iterrows(), 1):
+            ws.cell(row=linha, column=1, value=idx).alignment = AC
+            ws.cell(row=linha, column=2, value=str(row.get('DENOMINACAO_SOCIAL', ''))[:60])
+            ws.cell(row=linha, column=3, value=str(row.get('GESTORA', ''))[:30])
+            val = row[coluna]
+            if coluna == 'VL_PL':
+                val = round(val / 1_000_000, 2)
+            ws.cell(row=linha, column=4, value=round(val, 2)).alignment = AR
+            linha += 1
+        linha += 2
+    ws.column_dimensions["A"].width = 8
+    ws.column_dimensions["B"].width = 50
+    ws.column_dimensions["C"].width = 22
+    ws.column_dimensions["D"].width = 18
+    _assin(ws, linha + 1)
+
+def criar_comparativo(wb, df):
+    ws = wb.create_sheet("3. CDI vs IMAB")
+    ws.cell(row=1, column=1,
+            value=f"{NOME_FERRAMENTA} — FIDCs vs CDI vs IMAB").font = FONT_T
+    ws.cell(row=2, column=1,
+            value=f"Fontes: CVM | ANBIMA Data | {AUTOR}").font = FONT_S
+    ws.merge_cells("A1:H1")
+    ws.merge_cells("A2:H2")
+    CDIa = BENCH["CDI"].get("2026", 10.50)
+    IMAa = BENCH["IMAB"].get("2026", 11.80)
+    linha = 4
+    cab = ["Fundo", "Rentabilidade", f"CDI ({CDIa}%)", f"IMAB ({IMAa}%)",
+           "vs CDI (p.p.)", "vs IMAB (p.p.)", "Rating", "Classe"]
+    for c, t in enumerate(cab, 1):
+        ws.cell(row=linha, column=c, value=t)
+    _cab(ws, linha, len(cab))
+    linha += 1
+    if 'RENTABILIDADE' in df.columns:
+        df_temp = df.dropna(subset=['RENTABILIDADE']).sort_values('RENTABILIDADE', ascending=False).head(20)
+        for _, row in df_temp.iterrows():
+            rent = row['RENTABILIDADE']
+            ws.cell(row=linha, column=1, value=str(row.get('DENOMINACAO_SOCIAL', ''))[:45])
+            ws.cell(row=linha, column=2, value=round(rent, 2)).alignment = AR
+            ws.cell(row=linha, column=3, value=CDIa).alignment = AR
+            ws.cell(row=linha, column=4, value=IMAa).alignment = AR
+            vc, vi = rent - CDIa, rent - IMAa
+            for col, val in [(5, vc), (6, vi)]:
+                c = ws.cell(row=linha, column=col, value=round(val, 2))
+                c.alignment = AR
+                cor = "006100" if val > 0 else "9C0006"
+                c.font = Font(name="Calibri", bold=True, color=cor)
+                c.fill = FILL_V if val > 0 else FILL_R
+            ws.cell(row=linha, column=7, value=row.get('RATING', ''))
+            ws.cell(row=linha, column=8, value=row.get('CLASSE', ''))
+            linha += 1
+    linha += 3
+    ws.cell(row=linha, column=1, value="Benchmarks Históricos (ANBIMA)").font = FONT_T2
+    linha += 1
+    cab2 = ["Ano", "CDI", "IMAB", "IPCA", "CDI Real", "IMAB Real"]
+    for c, t in enumerate(cab2, 1):
+        ws.cell(row=linha, column=c, value=t)
+    _cab(ws, linha, 6)
+    linha += 1
+    for ano in sorted(BENCH["CDI"]):
+        cdi = BENCH["CDI"][ano]
+        imab = BENCH["IMAB"][ano]
+        ipca = BENCH["IPCA"][ano]
+        ws.cell(row=linha, column=1, value=ano)
+        ws.cell(row=linha, column=2, value=cdi).alignment = AR
+        ws.cell(row=linha, column=3, value=imab).alignment = AR
+        ws.cell(row=linha, column=4, value=ipca).alignment = AR
+        ws.cell(row=linha, column=5,
+                value=round((1 + cdi / 100) / (1 + ipca / 100) - 1, 4)).alignment = AR
+        ws.cell(row=linha, column=6,
+                value=round((1 + imab / 100) / (1 + ipca / 100) - 1, 4)).alignment = AR
+        linha += 1
+    linha += 2
+    ws.cell(row=linha, column=1,
+            value="⚠ Comparação ilustrativa. Riscos distintos.").font = FONT_S
+    _assin(ws, linha + 1)
+    for c, w in [(1, 40), (2, 16), (3, 14), (4, 14), (5, 16), (6, 16),
+                  (7, 10), (8, 16)]:
+        ws.column_dimensions[get_column_letter(c)].width = w
+    ws.freeze_panes = "A5"
+
+def criar_governanca(wb, metricas):
+    ws = wb.create_sheet("4. Governança")
+    if not metricas:
+        ws.cell(row=1, column=1, value="Nenhuma métrica disponível.").font = FONT_D
+        return
+    MAPA = {
+        'VL_PL': 'PL (R$ milhões)',
+        'PRAZO_MEDIO': 'Prazo Médio (dias)',
+        'PDD_PCT': 'PDD (% PL)',
+        'RECOMPRA_PCT': 'Recompra (%)',
+        'CONC_TOP5_SACADOS': 'Conc. Top5 Sacados (%)',
+        'CONC_TOP5_CEDENTES': 'Conc. Top5 Cedentes (%)',
+        'NUM_SACADOS': 'Nº Sacados',
+        'NUM_CEDENTES': 'Nº Cedentes',
+        'OVERCOLLATERALIZATION': 'Overcollateralization (x)',
+        'PCT_LIQUIDEZ': 'Liquidez (%)',
+        'PCT_VENCIDOS': 'Vencidos +90d (%)',
+        'RENTABILIDADE': 'Rentabilidade (% a.a.)',
+    }
+    INTERP = {
+        'VL_PL': 'Fundos < R$ 50 MM requerem atenção.',
+        'PRAZO_MEDIO': 'Acima de 180d: risco de alongamento.',
+        'PDD_PCT': 'Até 2%: ok. 2-5%: atenção. >5%: alerta.',
+        'RECOMPRA_PCT': '>80%: confiança do cedente.',
+        'CONC_TOP5_SACADOS': '>60%: risco severo.',
+        'CONC_TOP5_CEDENTES': '>70%: dependência crítica.',
+        'NUM_SACADOS': 'Mais pulverizado = menos risco.',
+        'NUM_CEDENTES': 'Diversificação reduz risco.',
+        'OVERCOLLATERALIZATION': '>1.2x: saudável. <1.0x: crítico.',
+        'PCT_LIQUIDEZ': 'Ideal >10%. <5%: risco.',
+        'PCT_VENCIDOS': 'Até 2%: normal. >5%: problema estrutural.',
+        'RENTABILIDADE': 'Analisar junto com PDD e prazo médio.',
+    }
+    cab = ["Métrica", "Média", "Mediana", "Desv.Padrão",
+           "Melhor", "Pior", "P25", "P75", "Interpretação"]
+    for c, t in enumerate(cab, 1):
+        ws.cell(row=1, column=c, value=t)
+    _cab(ws, 1, len(cab))
+    linha = 2
+    for met, vals in metricas.items():
+        nome = MAPA.get(met, met)
+        ws.cell(row=linha, column=1, value=nome).font = Font(name="Calibri", bold=True)
+        for ci, ch in enumerate(['media', 'mediana', 'desvio_padrao', 'min',
+                                  'max', 'p25', 'p75'], 2):
+            v = vals.get(ch)
+            if v is not None:
+                ws.cell(row=linha, column=ci, value=v).alignment = AR
+        ws.cell(row=linha, column=9, value=INTERP.get(met, ''))
+        if met in ('PDD_PCT', 'CONC_TOP5_SACADOS', 'CONC_TOP5_CEDENTES', 'PCT_VENCIDOS'):
+            md = vals.get('media', 0)
+            if md and md > 5:
+                ws.cell(row=linha, column=2).fill = FILL_R
+            elif md and md > 3:
+                ws.cell(row=linha, column=2).fill = FILL_A
+        linha += 1
+    for c, w in [(1, 28), (2, 12), (3, 12), (4, 14), (5, 12), (6, 12),
+                  (7, 10), (8, 10), (9, 70)]:
+        ws.column_dimensions[get_column_letter(c)].width = w
+    ws.freeze_panes = "A2"
+    _assin(ws, linha + 2)
+
+def criar_proposito(wb):
+    ws = wb.create_sheet("5. Propósito")
+    textos = [
+        (f"O Propósito do {NOME_FERRAMENTA}", FONT_T),
+        (f"Por {AUTOR} — {VERSAO}", FONT_S),
+        ("", None),
+        ("O que você está prestes a ver não é uma planilha. É um mapa de minas terrestres.", FONT_D),
+        ("", None),
+        ("O maior risco não está no que você consegue ver — está no que você não consegue.", None),
+        ("", None),
+        ("Como usar:", FONT_D),
+        ("1. Abra o Ranking e filtre\n2. Veja o Top 10\n3. Compare com CDI e IMAB\n4. Interprete na Governança", None),
+        ("", None),
+        (f"📬 {AUTOR}\n{REPOSITORIO}", FONT_S),
+    ]
+    linha = 1
+    for txt, st in textos:
+        if txt == "":
+            linha += 1
+            continue
+        c = ws.cell(row=linha, column=1, value=txt)
+        if st:
+            c.font = st
+        c.alignment = AL
+        linha += 1
+    ws.column_dimensions["A"].width = 120
+
+def criar_fontes(wb):
+    ws = wb.create_sheet("6. Fontes")
+    linhas = [
+        ("FONTES OFICIAIS", "t2"), ("", ""),
+        ("1. CVM — Portal Dados Abertos", "s"),
+        ("   https://dados.cvm.gov.br/dataset/fidc-doc-inf_mensal", "l"),
+        ("   Informe Mensal de FIDCs", "d"), ("", ""),
+        ("2. ANBIMA Data", "s"),
+        ("   https://data.anbima.com.br", "l"), ("", ""),
+        ("3. Benchmarks CDI/IMAB/IPCA — ANBIMA / B3", "d"), ("", ""),
+        ("PROCESSAMENTO", "t2"), ("", ""),
+        ("  1. Acessa repositório CVM e baixa ZIP mais recente", "p"),
+        ("  2. Extrai CSVs (TAB_I a TAB_IX)", "p"),
+        ("  3. Calcula métricas derivadas (PDD/PL, overcoll., etc.)", "p"),
+        ("  4. Gera o dashboard Excel com formatação condicional", "p"),
+        ("", ""),
+        ("⚠ LIMITAÇÕES", "av"), ("", ""),
+        ("  • Formato dos CSVs pode mudar sem aviso", "d"),
+        ("  • PDD e recompra frequentemente vêm zerados", "d"),
+        ("  • Defasagem de 30-45 dias", "d"), ("", ""),
+        (f"{NOME_FERRAMENTA} — {AUTOR} — {REPOSITORIO}", "dest"),
+        ("Licença: MIT", ""),
+    ]
+    est = {
+        "t2": Font(name="Calibri", bold=True, size=14, color=AZUL_ESCURO),
+        "s": Font(name="Calibri", bold=True, size=12, color="2E75B6"),
+        "l": Font(name="Calibri", size=10, color="0563C1", underline="single"),
+        "d": Font(name="Calibri", size=10, color=PRETO),
+        "p": Font(name="Calibri", size=10),
+        "av": Font(name="Calibri", bold=True, size=10, color="CC0000"),
+        "dest": Font(name="Calibri", bold=True, size=11, color=AZUL_ESCURO),
+    }
+    for r, (txt, stl) in enumerate(linhas, 1):
+        c = ws.cell(row=r, column=1, value=txt)
+        if stl in est:
+            c.font = est[stl]
+    ws.column_dimensions["A"].width = 110
+
+def criar_glossario(wb):
+    ws = wb.create_sheet("7. Glossário")
+    dados = [
+        ("Métrica", "O que é", "Como interpretar"),
+        ("PL (R$ milhões)", "Patrimônio Líquido do fundo.", ">R$200 MM: líquido. <R$50 MM: atenção."),
+        ("Prazo Médio (dias)", "Prazo médio ponderado dos direitos creditórios.", "Até 90d: curto. 90-180: médio. >180: risco."),
+        ("PDD (% PL)", "Provisão para Devedores Duvidosos.", "Até 2%: saudável. 2-5%: atenção. >5%: alerta."),
+        ("Recompra (%)", "Direitos recomprados no mês / PL.", ">80%: confiança. <50%: atenção."),
+        ("Overcollateralization", "Ativo total / PL.", ">1.2x: bom. 1.0-1.2x: apertado. <1.0x: crítico."),
+        ("Conc. Top5 Sacados", "% nos 5 maiores devedores.", "Até 40%: bom. 40-60%: moderado. >60%: severo."),
+        ("Conc. Top5 Cedentes", "% nos 5 maiores cedentes.", "Até 50%: saudável. >70%: dependência crítica."),
+        ("Liquidez (%)", "Caixa + títulos públicos / PL.", "Ideal >10%. <5%: risco."),
+        ("Vencidos +90d (%)", "Créditos com atraso >90d / PL.", "Até 2%: normal. 2-5%: investigar. >5%: problema estrutural."),
+        ("Subordinado (%)", "Cotas que absorvem perdas primeiro.", "Maior = mais proteção ao sênior. Mínimo: 10%."),
+        ("CDI", "Certificado de Depósito Interbancário.", "Principal benchmark de renda fixa."),
+        ("IMAB", "Índice ANBIMA de títulos prefixados.", "Benchmark para FIDCs de duration longa."),
+    ]
+    for r, row in enumerate(dados, 1):
+        for c, v in enumerate(row, 1):
+            ws.cell(row=r, column=c, value=v)
+    _cab(ws, 1, 3)
+    _zeb(ws, 2, len(dados), 3)
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 48
+    ws.column_dimensions["C"].width = 60
+    ws.freeze_panes = "A2"
+
+def gerar_dashboard(df_fundos, metricas, output_path):
+    if df_fundos.empty:
+        print("[AVISO] DataFrame vazio. Dashboard não gerado.")
+        return
+    wb = Workbook()
+    try:
+        criar_capa(wb)
+        criar_ranking(wb, df_fundos)
+        criar_top10(wb, df_fundos)
+        criar_comparativo(wb, df_fundos)
+        criar_governanca(wb, metricas)
+        criar_proposito(wb)
+        criar_fontes(wb)
+        criar_glossario(wb)
+        wb.save(output_path)
+        print(f"\n✅ {NOME_FERRAMENTA} gerado com sucesso!")
+        print(f"📁 {output_path}")
+    except Exception as e:
+        print(f"\n❌ Erro ao gerar dashboard: {e}")
+        raise
