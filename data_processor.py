@@ -18,22 +18,27 @@ def processar_dados_cvm(data_dir):
         print(f"  Pasta {data_path} nao encontrada!")
         return pd.DataFrame()
 
-    # Procura arquivo tab_I na pasta data/
     arquivos = list(data_path.glob("*tab_I*"))
     if not arquivos:
-        print(f"  Nenhum arquivo tab_I encontrado em {data_path}")
+        print(f"  Nenhum arquivo tab_I encontrado")
         return pd.DataFrame()
 
     arquivo = arquivos[0]
     print(f"  Lendo {arquivo.name}...")
 
+    # Tenta latin1 primeiro, depois utf-8
     try:
         df = pd.read_csv(arquivo, encoding='latin1', sep=';', dtype=str, low_memory=False)
     except:
-        df = pd.read_csv(arquivo, encoding='utf-8', sep=';', dtype=str, low_memory=False)
+        try:
+            df = pd.read_csv(arquivo, encoding='utf-8', sep=';', dtype=str, low_memory=False)
+        except:
+            df = pd.read_csv(arquivo, sep=';', dtype=str, low_memory=False)
 
     print(f"  {len(df)} linhas, {len(df.columns)} colunas")
+    print(f"  Colunas: {[c for c in df.columns[:5]]}")
 
+    # Mapeia colunas (maiusculo ou minusculo)
     rename_map = {}
     for col in df.columns:
         c = col.strip().upper()
@@ -45,12 +50,16 @@ def processar_dados_cvm(data_dir):
             rename_map[col] = 'VL_ATIVO'
 
     df = df.rename(columns=rename_map)
+    print(f"  Mapeamento: {rename_map}")
 
+    # Converte ativo para numerico
     if 'VL_ATIVO' in df.columns:
         df['VL_PL'] = df['VL_ATIVO'].apply(limpar_valor)
     else:
+        print(f"  AVISO: coluna VL_ATIVO nao encontrada!")
         df['VL_PL'] = 0.0
 
+    # Remove duplicatas
     if 'CNPJ_FUNDO' in df.columns:
         antes = len(df)
         df = df.drop_duplicates(subset=['CNPJ_FUNDO'], keep='last')
@@ -66,4 +75,6 @@ def processar_dados_cvm(data_dir):
         df = df.sort_values('VL_PL', ascending=False)
 
     print(f"  {len(df)} fundos processados")
+    if 'VL_PL' in df.columns:
+        print(f"  PL max: {df['VL_PL'].max():.2f} (reais)")
     return df
