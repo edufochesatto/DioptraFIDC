@@ -1,6 +1,5 @@
 """
-Gera o arquivo docs/dados.json apenas com dados reais processados.
-Sem fallback sintético.
+Gera docs/dados.json apenas com dados reais. Sem sintéticos.
 """
 import json
 import pandas as pd
@@ -12,15 +11,13 @@ DOCS_DIR = Path("docs")
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
 pkl_file = DATA_DIR / "dados.pkl"
-
 fundos = []
 
 if pkl_file.exists():
     df = pd.read_pickle(pkl_file)
-    print(f"📊 Pickle lido: {len(df)} linhas, colunas: {list(df.columns)}")
+    print(f"📊 Pickle: {len(df)} linhas")
 
-    if len(df) > 0 and 'VL_PL' in df.columns and not df['VL_PL'].isna().all() and not (df['VL_PL'] == 0).all():
-        # Dados reais existem — usa eles
+    if len(df) > 0 and 'VL_PL' in df.columns and df['VL_PL'].notna().any() and (df['VL_PL'] != 0).any():
         df = df.replace([np.inf, -np.inf], np.nan)
         df = df.where(pd.notna(df), None)
         for _, row in df.iterrows():
@@ -36,11 +33,11 @@ if pkl_file.exists():
                 else:
                     d[col] = val
             fundos.append(d)
-        print(f"✅ {len(fundos)} fundos reais exportados")
+        print(f"✅ {len(fundos)} fundos exportados")
     else:
-        print("⚠ Dados reais estão vazios ou zerados. Nenhum fundo será exportado.")
+        print("⚠ Dados vazios ou zerados. Nenhum fundo.")
 else:
-    print("⚠ Arquivo pickle não encontrado. Nenhum fundo será exportado.")
+    print("⚠ Pickle não encontrado.")
 
 with open(DOCS_DIR / "dados.json", "w") as f:
     json.dump({
@@ -50,4 +47,4 @@ with open(DOCS_DIR / "dados.json", "w") as f:
         "versao": "Julho/2026"
     }, f, indent=2, ensure_ascii=False)
 
-print(f"✅ dados.json gerado! {len(fundos)} fundos")
+print(f"✅ dados.json: {len(fundos)} fundos")
