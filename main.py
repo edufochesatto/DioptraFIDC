@@ -22,21 +22,45 @@ print("=" * 60)
 print("DIOPTRA FIDC")
 print("=" * 60)
 
-# Procura CSV - SOMENTE tab_I (exclui tab_II, tab_III etc)
-print(f"\n[1/2] Procurando tab_I em {DATA_DIR}...")
-todos = sorted(DATA_DIR.glob("*tab_I*"))
-arquivos = [f for f in todos if "_tab_I_" in f.name or f.name.endswith("_tab_I")]
-# Se ainda nao achou, tenta outro padrao
+print(f"\n[1/2] Buscando arquivo tab_I em {DATA_DIR}...")
+
+# Estrategia 1: busca EXATA por _tab_I_ (com underscore dos dois lados)
+arquivos = sorted(DATA_DIR.glob("*_tab_I_*"))
+print(f"  Busca _tab_I_: {[f.name for f in arquivos]}")
+
+# Estrategia 2: se nao achou, busca todos com tab_I mas sem tab_III/tab_II etc
 if not arquivos:
-    arquivos = [f for f in todos if not any(x in f.name.upper() for x in ["_TAB_II", "_TAB_III", "_TAB_IV", "_TAB_V", "_TAB_VI", "_TAB_VII", "_TAB_IX", "_TAB_X"])]
+    todos = list(DATA_DIR.glob("*tab_I*"))
+    arquivos = [f for f in todos if not any(
+        x in f.name.upper() for x in 
+        ['_TAB_II', '_TAB_III', '_TAB_IV', '_TAB_V', '_TAB_VI', '_TAB_VII', '_TAB_IX', '_TAB_X']
+    )]
+    print(f"  Busca filtrada tab_I: {[f.name for f in arquivos]}")
+
+# Estrategia 3: varre TODOS os CSVs e testa qual tem VL_ATIVO
+if not arquivos:
+    print("  Busca exata falhou. Varrendo todos os CSVs...")
+    for f in sorted(DATA_DIR.glob("*.csv")):
+        try:
+            teste = pd.read_csv(f, encoding='latin1', sep=';', nrows=5, dtype=str, low_memory=False)
+            for col in teste.columns:
+                if 'VL_ATIVO' in col.upper() or 'ATIVO' in col.upper():
+                    # Tem coluna de ativo! Pode ser o tab_I
+                    arquivos = [f]
+                    print(f"  Encontrado: {f.name} (tem coluna {col})")
+                    break
+        except:
+            pass
+        if arquivos:
+            break
 
 if not arquivos:
-    print("  ERRO: Nenhum arquivo tab_I encontrado!")
-    print(f"  Arquivos com tab_I: {[f.name for f in todos]}")
+    print("  ERRO FATAL: Nenhum arquivo com dados de ativo encontrado!")
+    print(f"  Arquivos em data/: {[f.name for f in DATA_DIR.glob('*')]}")
     exit(1)
 
 arquivo = arquivos[0]
-print(f"  Lendo {arquivo.name}...")
+print(f"\n  Lendo {arquivo.name}...")
 
 try:
     df = pd.read_csv(arquivo, encoding='latin1', sep=';', dtype=str, low_memory=False)
@@ -47,9 +71,9 @@ except:
         df = pd.read_csv(arquivo, sep=';', dtype=str, low_memory=False)
 
 print(f"  {len(df)} linhas, {len(df.columns)} colunas")
-print(f"  Primeiras colunas: {list(df.columns[:8])}")
+print(f"  Colunas originais: {list(df.columns[:8])}")
 
-# Renomeia colunas
+# Mapeia colunas (maiusculo ou minusculo)
 rename_map = {}
 for col in df.columns:
     c = col.strip().upper()
@@ -59,17 +83,30 @@ for col in df.columns:
         rename_map[col] = 'DENOMINACAO_SOCIAL'
     elif c == 'TAB_I_VL_ATIVO':
         rename_map[col] = 'VL_ATIVO'
+    # Tb tenta minusculo
+    if col.strip() == 'cnpj_fundo_classe':
+        rename_map[col] = 'CNPJ_FUNDO'
+    elif col.strip() == 'denom_social':
+        rename_map[col] = 'DENOMINACAO_SOCIAL'
+    elif col.strip() == 'tab_i_vl_ativo':
+        rename_map[col] = 'VL_ATIVO'
 
 df = df.rename(columns=rename_map)
-print(f"  Colunas mapeadas: {list(rename_map.keys())}")
 
-# Converte ativo para numero
+# Procura VL_ATIVO com qualquer nome parecido
+if 'VL_ATIVO' not in df.columns:
+    for col in df.columns:
+        if 'VL_ATIVO' in col.upper() or ('ATIVO' in col.upper() and 'TAB_I' in col.upper()):
+            df['VL_ATIVO'] = df[col]
+            print(f"  Usando coluna {col} como VL_ATIVO")
+            break
+
 if 'VL_ATIVO' in df.columns:
     df['VL_PL'] = df['VL_ATIVO'].apply(limpar_valor)
     print(f"  VL_ATIVO encontrado! Max: R$ {df['VL_PL'].max():.2f}")
 else:
-    print(f"  ERRO: coluna VL_ATIVO nao encontrada!")
-    print(f"  Colunas disponiveis: {[c for c in df.columns if 'ATIVO' in c.upper() or 'PL' in c.upper()]}")
+    print(f"  ERRO: Nao foi possivel encontrar coluna de ativo!")
+    print(f"  Colunas: {list(df.columns)}")
     exit(1)
 
 # Remove duplicatas
@@ -77,6 +114,15 @@ if 'CNPJ_FUNDO' in df.columns:
     antes = len(df)
     df = df.drop_duplicates(subset=['CNPJ_FUNDO'], keep='last')
     print(f"  Duplicatas removidas: {antes - len(df)}")
+else:
+    # Tenta CNPJ_FUNDO_CLASSE
+    for col in df.columns:
+        if 'CNPJ' in col.upper() and 'FUNDO' in col.upper():
+            df = df.rename(columns={col: 'CNPJ_FUNDO'})
+            antes = len(df)
+            df = df.drop_duplicates(subset=['CNPJ_FUNDO'], keep='last')
+            print(f"  Usando {col} como CNPJ. Duplicatas: {antes - len(df)}")
+            break
 
 # Converte reais para milhoes
 if df['VL_PL'].max() > 1e8:
